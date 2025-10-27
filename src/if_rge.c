@@ -30,6 +30,7 @@
 #include <sys/taskqueue.h>
 #include <sys/bus.h>
 #include <sys/module.h>
+#include <sys/rman.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
@@ -65,8 +66,10 @@ int rge_debug = 0;
 #define DPRINTF(x)
 #endif
 
+static int		rge_attach(device_t);
+static int		rge_detach(device_t);
+
 #if 0
-void		rge_attach(struct device *, struct device *, void *);
 int		rge_activate(struct device *, int);
 int		rge_intr(void *);
 int		rge_ioctl(struct ifnet *, u_long, caddr_t);
@@ -101,14 +104,18 @@ void		rge_phy_config_mac_r25(struct rge_softc *);
 void		rge_phy_config_mac_r25b(struct rge_softc *);
 void		rge_phy_config_mac_r25d(struct rge_softc *);
 void		rge_phy_config_mcu(struct rge_softc *, uint16_t);
-void		rge_set_macaddr(struct rge_softc *, const uint8_t *);
-void		rge_get_macaddr(struct rge_softc *, uint8_t *);
+#endif
+static void		rge_set_macaddr(struct rge_softc *, const uint8_t *);
+static void		rge_get_macaddr(struct rge_softc *, uint8_t *);
+#if 0
 void		rge_hw_init(struct rge_softc *);
 void		rge_hw_reset(struct rge_softc *);
 void		rge_disable_phy_ocp_pwrsave(struct rge_softc *);
 void		rge_patch_phy_mcu(struct rge_softc *, int);
 void		rge_add_media_types(struct rge_softc *);
-void		rge_config_imtype(struct rge_softc *, int);
+#endif
+static void		rge_config_imtype(struct rge_softc *, int);
+#if 0
 void		rge_disable_aspm_clkreq(struct rge_softc *);
 void		rge_disable_hw_im(struct rge_softc *);
 void		rge_disable_sim_im(struct rge_softc *);
@@ -188,7 +195,10 @@ rge_probe(device_t dev)
 static int
 rge_attach(device_t dev)
 {
+	uint8_t eaddr[ETHER_ADDR_LEN];
 	struct rge_softc *sc;
+	uint32_t hwrev;
+	int rid;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -210,10 +220,34 @@ rge_attach(device_t dev)
 	int offset;
 
 	pci_set_powerstate(pa->pa_pc, pa->pa_tag, PCI_PMCSR_STATE_D0);
+#endif
+	/* Enable bus mastering */
+	pci_enable_busmaster(dev);
 
 	/*
 	 * Map control/status registers.
 	 */
+
+	/*
+	 * The openbsd driver (and my E3000 NIC) handle registering three
+	 * kinds of BARs - a 64 bit MMIO BAR, a 32 bit MMIO BAR, and then
+	 * a legacy IO port BAR.
+	 *
+	 * To simplify bring-up, I'm going to request resources for the first
+	 * MMIO BAR (BAR2) which should be a 32 bit BAR.
+	 */
+	rid = PCIR_BAR(2);
+	sc->sc_bres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+	    RF_ACTIVE);
+	if (sc->sc_bres == NULL) {
+		device_printf(dev, "Unable to allocate bus resource: memory\n");
+		goto fail;
+	}
+	sc->rge_bhandle = rman_get_bushandle(sc->sc_bres);
+	sc->rge_btag = rman_get_bustag(sc->sc_bres);
+	sc->rge_bsize = rman_get_size(sc->sc_bres);
+
+#if 0
 	if (pci_mapreg_map(pa, RGE_PCI_BAR2, PCI_MAPREG_TYPE_MEM |
 	    PCI_MAPREG_MEM_TYPE_64BIT, 0, &sc->rge_btag, &sc->rge_bhandle,
 	    NULL, &sc->rge_bsize, 0)) {
@@ -228,7 +262,9 @@ rge_attach(device_t dev)
 			}
 		}
 	}
+#endif
 
+#if 0
 	q = malloc(sizeof(struct rge_queues), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (q == NULL) {
 		printf(": unable to allocate queue memory\n");
@@ -239,7 +275,9 @@ rge_attach(device_t dev)
 
 	sc->sc_queues = q;
 	sc->sc_nqueues = 1;
+#endif
 
+#if 0
 	/*
 	 * Allocate interrupt.
 	 */
@@ -265,34 +303,41 @@ rge_attach(device_t dev)
 	sc->sc_dmat = pa->pa_dmat;
 	sc->sc_pc = pa->pa_pc;
 	sc->sc_tag = pa->pa_tag;
+#endif
 
 	/* Determine hardware revision */
 	hwrev = RGE_READ_4(sc, RGE_TXCFG) & RGE_TXCFG_HWREV;
 	switch (hwrev) {
 	case 0x60900000:
 		sc->rge_type = MAC_R25;
+		device_printf(dev, "RTL8125\n");
 		break;
 	case 0x64100000:
 		sc->rge_type = MAC_R25B;
-		printf(": RTL8125B");
+		device_printf(dev, "RTL8125B\n");
 		break;
 	case 0x64900000:
 		sc->rge_type = MAC_R26;
+		device_printf(dev, "RTL8126\n");
 		break;
 	case 0x68800000:
 		sc->rge_type = MAC_R25D;
-		printf(": RTL8125D");
+		device_printf(dev, "RTL8125D\n");
 		break;
 	case 0x6c900000:
 		sc->rge_type = MAC_R27;
+		device_printf(dev, "RTL8127\n");
 		break;
 	default:
-		printf(": unknown version 0x%08x\n", hwrev);
-		return;
+		device_printf(dev, "unknown version 0x%08x\n", hwrev);
+		goto fail;
 	}
+
+	device_printf(dev, "HWREV: 0x%08x; rge_type=%d\n", hwrev, sc->rge_type);
 
 	rge_config_imtype(sc, RGE_IMTYPE_SIM);
 
+#if 0
 	/*
 	 * PCI Express check.
 	 */
@@ -306,13 +351,17 @@ rge_attach(device_t dev)
 		pci_conf_write(pa->pa_pc, pa->pa_tag, offset + PCI_PCIE_LCSR,
 		    reg);
 	}
+#endif
 
+#if 0
 	if (rge_chipinit(sc))
-		return;
+		goto fail;
+#endif
 
 	rge_get_macaddr(sc, eaddr);
-	printf(", address %s\n", ether_sprintf(eaddr));
+	device_printf(dev, "MAC address %6D\n", eaddr, ":");
 
+#if 0
 	memcpy(sc->sc_arpcom.ac_enaddr, eaddr, ETHER_ADDR_LEN);
 
 	if (rge_allocmem(sc))
@@ -356,12 +405,21 @@ rge_attach(device_t dev)
 	ether_ifattach(ifp);
 #endif
 	return (0);
+fail:
+	rge_detach(dev);
+	return (ENXIO);
 }
 
 static int
 rge_detach(device_t dev)
 {
 	struct rge_softc *sc = device_get_softc(dev);
+
+	if (sc->sc_bres) {
+		bus_release_resource(dev, SYS_RES_MEMORY,
+		    rman_get_rid(sc->sc_bres), sc->sc_bres);
+		sc->sc_bres = NULL;
+	}
 
 	if (sc->sc_ifp)
 		if_free(sc->sc_ifp);
@@ -2927,8 +2985,9 @@ rge_phy_config_mcu(struct rge_softc *sc, uint16_t rcodever)
 		rge_write_phy_ocp(sc, 0xa438, rcodever);
 	}
 }
+#endif
 
-void
+static void
 rge_set_macaddr(struct rge_softc *sc, const uint8_t *addr)
 {
 	RGE_SETBIT_1(sc, RGE_EECMD, RGE_EECMD_WRITECFG);
@@ -2939,7 +2998,7 @@ rge_set_macaddr(struct rge_softc *sc, const uint8_t *addr)
 	RGE_CLRBIT_1(sc, RGE_EECMD, RGE_EECMD_WRITECFG);
 }
 
-void
+static void
 rge_get_macaddr(struct rge_softc *sc, uint8_t *addr)
 {
 	int i;
@@ -2953,6 +3012,7 @@ rge_get_macaddr(struct rge_softc *sc, uint8_t *addr)
 	rge_set_macaddr(sc, addr);
 }
 
+#if 0
 void
 rge_hw_init(struct rge_softc *sc)
 {
@@ -3067,8 +3127,9 @@ rge_add_media_types(struct rge_softc *sc)
 		    0, NULL);
 	}
 }
+#endif
 
-void
+static void
 rge_config_imtype(struct rge_softc *sc, int imtype)
 {
 	switch (imtype) {
@@ -3079,10 +3140,11 @@ rge_config_imtype(struct rge_softc *sc, int imtype)
 		sc->rge_intrs = RGE_INTRS_TIMER;
 		break;
 	default:
-		panic("%s: unknown imtype %d", sc->sc_dev.dv_xname, imtype);
+		device_printf(sc->sc_dev, "unknown imtype %d", imtype);
 	}
 }
 
+#if 0
 void
 rge_disable_aspm_clkreq(struct rge_softc *sc)
 {

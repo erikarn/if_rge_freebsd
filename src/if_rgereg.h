@@ -397,6 +397,7 @@ struct rge_softc {
 	if_t			sc_ifp;		/* Ethernet common data */
 	struct mtx		sc_mtx;
 	void			*sc_ih;		/* interrupt vectoring */
+	struct resource		*sc_bres;	/* bus space MMIO/IOPORT resource */
 	bus_space_handle_t	rge_bhandle;	/* bus space handle */
 	bus_space_tag_t		rge_btag;	/* bus space tag */
 	bus_size_t		rge_bsize;

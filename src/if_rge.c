@@ -75,6 +75,12 @@ int		rge_intr(void *);
 int		rge_ioctl(struct ifnet *, u_long, caddr_t);
 void		rge_start(struct ifqueue *);
 void		rge_watchdog(struct ifnet *);
+#endif
+static int	rge_transmit_if(if_t, struct mbuf *);
+static void	rge_qflush_if(if_t);
+static int	rge_ioctl_if(if_t, u_long, caddr_t);
+static void	rge_init_if(void *);
+#if 0
 void		rge_init(struct ifnet *);
 void		rge_stop(struct ifnet *);
 int		rge_ifmedia_upd(struct ifnet *);
@@ -193,6 +199,33 @@ rge_probe(device_t dev)
 	return (ENXIO);
 }
 
+static void
+rge_attach_if(struct rge_softc *sc, const char *eaddr)
+{
+	if_initname(sc->sc_ifp, device_get_name(sc->sc_dev),
+	    device_get_unit(sc->sc_dev));
+	if_setdev(sc->sc_ifp, sc->sc_dev);
+	if_setinitfn(sc->sc_ifp, rge_init_if);
+	if_setsoftc(sc->sc_ifp, sc);
+	if_setflags(sc->sc_ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
+	if_setioctlfn(sc->sc_ifp, rge_ioctl_if);
+	if_settransmitfn(sc->sc_ifp, rge_transmit_if);
+	if_setqflushfn(sc->sc_ifp, rge_qflush_if);
+	if_setcapabilities(sc->sc_ifp, 0);
+	if_setcapenable(sc->sc_ifp, 0);
+
+	/* Attach interface */
+	ether_ifattach(sc->sc_ifp, eaddr);
+
+	/* TODO: set offload/TSO as appropriate */
+	/* TODO: set jumbo tx/rx */
+	/* TODO: set WOL */
+	/* TODO: set vlan as appropriate */
+
+	if_setsendqlen(sc->sc_ifp, 128); /* XXX */
+	if_setsendqready(sc->sc_ifp);
+}
+
 static int
 rge_attach(device_t dev)
 {
@@ -200,6 +233,7 @@ rge_attach(device_t dev)
 	struct rge_softc *sc;
 	uint32_t hwrev;
 	int rid;
+	int error;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -300,11 +334,29 @@ rge_attach(device_t dev)
 		return;
 	}
 	printf(": %s", intrstr);
+#endif
 
+#if 0
 	sc->sc_dmat = pa->pa_dmat;
 	sc->sc_pc = pa->pa_pc;
 	sc->sc_tag = pa->pa_tag;
 #endif
+
+	/* Allocate top level bus DMA tag */
+	error = bus_dma_tag_create(bus_get_dma_tag(dev), 4, 0,
+	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    NULL,
+	    0x3ffff, /* XXX maxsize */
+	    RGE_TX_NSEGS, /* nsegments */
+	    0x3ffff, /* XXX maxsegsize */
+	    BUS_DMA_ALLOCNOW, /* flags */
+	    NULL, NULL, /* lockfunc, lockarg */
+	    &sc->sc_dmat);
+	if (error) {
+		device_printf(dev,
+		    "couldn't allocate device DMA tag (error %d)\n", error);
+		    goto fail;
+	}
 
 	/* Determine hardware revision */
 	hwrev = RGE_READ_4(sc, RGE_TXCFG) & RGE_TXCFG_HWREV;
@@ -365,7 +417,11 @@ rge_attach(device_t dev)
 
 	if (rge_allocmem(sc))
 		return;
+#endif
 
+	rge_attach_if(sc, eaddr);
+
+#if 0
 	ifp = &sc->sc_arpcom.ac_if;
 	ifp->if_softc = sc;
 	strlcpy(ifp->if_xname, sc->sc_dev.dv_xname, IFNAMSIZ);
@@ -389,6 +445,10 @@ rge_attach(device_t dev)
 	ifp->if_wol = rge_wol;
 	rge_wol(ifp, 0);
 #endif
+
+#endif
+
+#if 0
 	timeout_set(&sc->sc_timeout, rge_tick, sc);
 	task_set(&sc->sc_task, rge_txstart, sc);
 
@@ -399,7 +459,9 @@ rge_attach(device_t dev)
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
 	sc->sc_media.ifm_media = sc->sc_media.ifm_cur->ifm_media;
+#endif
 
+#if 0
 	if_attach(ifp);
 	ether_ifattach(ifp);
 #endif
@@ -414,14 +476,19 @@ rge_detach(device_t dev)
 {
 	struct rge_softc *sc = device_get_softc(dev);
 
+	if (sc->sc_ifp) {
+		ether_ifdetach(sc->sc_ifp);
+		if_free(sc->sc_ifp);
+	}
+
+	if (sc->sc_dmat)
+		bus_dma_tag_destroy(sc->sc_dmat);
+
 	if (sc->sc_bres) {
 		bus_release_resource(dev, SYS_RES_MEMORY,
 		    rman_get_rid(sc->sc_bres), sc->sc_bres);
 		sc->sc_bres = NULL;
 	}
-
-	if (sc->sc_ifp)
-		if_free(sc->sc_ifp);
 
 	mtx_destroy(&sc->sc_mtx);
 
@@ -757,7 +824,45 @@ rge_watchdog(struct ifnet *ifp)
 
 	rge_init(ifp);
 }
+#endif
 
+static void
+rge_qflush_if(if_t ifp)
+{
+	struct rge_softc *sc = if_getsoftc(ifp);
+
+	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+}
+
+static int
+rge_transmit_if(if_t ifp, struct mbuf *m)
+{
+	struct rge_softc *sc = if_getsoftc(ifp);
+
+	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+	/* Remember, don't free the mbuf on error! */
+	return (ENXIO);
+}
+
+static int
+rge_ioctl_if(if_t ifp, u_long cmd, caddr_t addr)
+{
+	struct rge_softc *sc = if_getsoftc(ifp);
+
+	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+	/* TODO: implement */
+	return (ENOTTY);
+}
+
+static void
+rge_init_if(void *xsc)
+{
+	struct rge_softc *sc = xsc;
+
+	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+}
+
+#if 0
 void
 rge_init(struct ifnet *ifp)
 {

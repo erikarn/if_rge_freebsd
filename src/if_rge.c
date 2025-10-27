@@ -28,6 +28,8 @@
 #include <net/if_media.h>
 #include <sys/queue.h>
 #include <sys/taskqueue.h>
+#include <sys/bus.h>
+#include <sys/module.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
@@ -35,6 +37,7 @@
 #include <net/bpf.h>
 
 #include <machine/bus.h>
+#include <machine/resource.h>
 //#include <machine/intr.h>
 
 #include <dev/mii/mii.h>
@@ -53,6 +56,7 @@ int rge_debug = 0;
 #define DPRINTF(x)
 #endif
 
+#if 0
 int		rge_match(struct device *, void *, void *);
 void		rge_attach(struct device *, struct device *, void *);
 int		rge_activate(struct device *, int);
@@ -138,6 +142,7 @@ static const struct {
 	MAC_R26_MCU
 };
 
+#if 0
 const struct cfattach rge_ca = {
 	sizeof(struct rge_softc), rge_match, rge_attach, NULL, rge_activate
 };
@@ -145,14 +150,44 @@ const struct cfattach rge_ca = {
 struct cfdriver rge_cd = {
 	NULL, "rge", DV_IFNET
 };
+#endif
 
-const struct pci_matchid rge_devices[] = {
-	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_E3000 },
-	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_RTL8125 },
-	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_RTL8126 },
-	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_RTL8127 }
+#endif
+
+struct rge_matchid {
+	uint16_t vendor;
+	uint16_t device;
+	const char *name;
 };
 
+const struct rge_matchid rge_devices[] = {
+	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_E3000, "Killer E3000" },
+	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_RTL8125, "RTL8125" },
+	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_RTL8126, "RTL8126", },
+	{ PCI_VENDOR_REALTEK, PCI_PRODUCT_REALTEK_RTL8127, "RTL8127" },
+	{ 0, 0, NULL }
+};
+
+static int
+rge_probe(device_t dev)
+{
+	uint16_t vendor, device;
+	const struct rge_matchid *ri;
+
+	vendor = pci_get_vendor(dev);
+	device = pci_get_device(dev);
+
+	for (ri = rge_devices; ri->name != NULL; ri++) {
+		if ((vendor == ri->vendor) && (device == ri->device)) {
+			device_set_desc(dev, ri->name);
+			return (BUS_PROBE_DEFAULT);
+		}
+	}
+
+	return (ENXIO);
+}
+
+#if 0
 int
 rge_match(struct device *parent, void *match, void *aux)
 {
@@ -3421,4 +3456,43 @@ rge_wol_power(struct rge_softc *sc)
 	RGE_SETBIT_1(sc, RGE_CFG1, RGE_CFG1_PM_EN);
 	RGE_SETBIT_1(sc, RGE_CFG2, RGE_CFG2_PMSTS_EN);
 }
+#endif
+
+#endif
+
+static device_method_t rge_methods[] = {
+	DEVMETHOD(device_probe,			rge_probe),
+#if 0
+	DEVMETHOD(device_attach,		rge_attach),
+	DEVMETHOD(device_detach,		rge_detach),
+	DEVMETHOD(device_suspend,		rge_suspend),
+	DEVMETHOD(device_resume,		rge_resume),
+	DEVMETHOD(device_shutdown,		rge_shutdown),
+#endif
+
+	/* TODO: does this require MII bus stuff? */
+#if 0
+	DEVMETHOD(miibus_readreg,		rge_miibus_readreg),
+	DEVMETHOD(miibus_writereg,		rge_miibus_writereg),
+	DEVMETHOD(miibus_statchg,		rge_miibus_statchg),
+#endif
+
+	DEVMETHOD_END
+};
+
+static driver_t rge_driver = {
+	"rge",
+	rge_methods,
+	sizeof(struct rge_softc)
+};
+
+MODULE_DEPEND(rge, pci, 1, 1, 1);
+MODULE_DEPEND(rge, ether, 1, 1, 1);
+#if 0
+MODULE_DEPEND(rge, miibus, 1, 1, 1);
+#endif
+
+DRIVER_MODULE_ORDERED(rge, pci, rge_driver, NULL, NULL, SI_ORDER_ANY);
+#if 0
+DRIVER_MODULE(miibus, rl, miibus_driver, 0, 0);
 #endif

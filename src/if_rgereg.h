@@ -343,7 +343,7 @@ struct rge_rx {
 	int			rge_rxq_prodidx;
 	int			rge_rxq_considx;
 
-	struct if_rxring	rge_rx_ring;
+//	struct if_rxring	rge_rx_ring;
 	bus_dma_segment_t	rge_rx_listseg;
 	int			rge_rx_listnseg;
 	bus_dmamap_t		rge_rx_list_map;
@@ -358,7 +358,7 @@ struct rge_queues {
 	void			*q_ihc;
 	int			q_index;
 	char			q_name[16];
-	pci_intr_handle_t	q_ih;
+//	pci_intr_handle_t	q_ih;
 	struct rge_tx		q_tx;
 	struct rge_rx		q_rx;
 };
@@ -392,18 +392,16 @@ enum rge_mac_type {
 #define RGE_RXCFG_CONFIG_8125D	0x41200c00
 #define RGE_RXCFG_CONFIG_8126	0x41200d00
 
-struct kstat;
-
 struct rge_softc {
-	struct device		sc_dev;
-	struct arpcom		sc_arpcom;	/* Ethernet common data */
+	device_t		sc_dev;
+//	struct arpcom		sc_arpcom;	/* Ethernet common data */
 	void			*sc_ih;		/* interrupt vectoring */
 	bus_space_handle_t	rge_bhandle;	/* bus space handle */
 	bus_space_tag_t		rge_btag;	/* bus space tag */
 	bus_size_t		rge_bsize;
 	bus_dma_tag_t		sc_dmat;
-	pci_chipset_tag_t	sc_pc;
-	pcitag_t		sc_tag;
+//	pci_chipset_tag_t	sc_pc;
+//	pcitag_t		sc_tag;
 	struct ifmedia		sc_media;	/* media info */
 	enum rge_mac_type	rge_type;
 
@@ -412,7 +410,7 @@ struct rge_softc {
 
 	struct task		sc_task;
 
-	struct timeout		sc_timeout;	/* tick timeout */
+//	struct timeout		sc_timeout;	/* tick timeout */
 
 	uint64_t		rge_mcodever;
 	uint16_t		rge_rcodever;
@@ -423,8 +421,6 @@ struct rge_softc {
 	int			rge_timerintr;
 #define RGE_IMTYPE_NONE		0
 #define RGE_IMTYPE_SIM		1
-
-	struct kstat		*sc_kstat;
 };
 
 /*

@@ -48,6 +48,7 @@
 
 #include "if_rge_vendor.h"
 #include "if_rgereg.h"
+#include "if_rge_microcode.h"
 
 #ifdef RGE_DEBUG
 #define DPRINTF(x)	do { if (rge_debug > 0) printf x; } while (0)

@@ -1,0 +1,12 @@
+TODO list
+=========
+
+
+ * I deleted the kstat code from the driver, but it turns out
+   the way to get stats from the NIC is actually a stats counter
+   page via DMA.
+
+   See rge_kstat_read() in the openbsd driver and bring back the
+   code that does the DMA transaction to fetch the stats page
+   from the hardware, then .. populate a sysctl list for now?
+

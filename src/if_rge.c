@@ -86,55 +86,57 @@ void		rge_tx_list_init(struct rge_queues *);
 void		rge_fill_rx_ring(struct rge_queues *);
 int		rge_rxeof(struct rge_queues *);
 int		rge_txeof(struct rge_queues *);
-int		rge_reset(struct rge_softc *);
-void		rge_iff(struct rge_softc *);
-int		rge_chipinit(struct rge_softc *);
-void		rge_set_phy_power(struct rge_softc *, int);
-void		rge_ephy_config(struct rge_softc *);
-void		rge_ephy_config_mac_r25(struct rge_softc *);
-void		rge_ephy_config_mac_r25b(struct rge_softc *);
-void		rge_ephy_config_mac_r27(struct rge_softc *);
-void		rge_mac_config_mcu(struct rge_softc *, enum rge_mac_type);
-uint64_t	rge_mcu_get_bin_version(uint16_t);
-void		rge_mcu_set_version(struct rge_softc *, uint64_t);
-int		rge_phy_config(struct rge_softc *);
-void		rge_phy_config_mac_r27(struct rge_softc *);
-void		rge_phy_config_mac_r26(struct rge_softc *);
-void		rge_phy_config_mac_r25(struct rge_softc *);
-void		rge_phy_config_mac_r25b(struct rge_softc *);
-void		rge_phy_config_mac_r25d(struct rge_softc *);
-void		rge_phy_config_mcu(struct rge_softc *, uint16_t);
 #endif
+static int		rge_reset(struct rge_softc *);
+#if 0
+void		rge_iff(struct rge_softc *);
+#endif
+static int		rge_chipinit(struct rge_softc *);
+static void		rge_set_phy_power(struct rge_softc *, int);
+static void		rge_ephy_config(struct rge_softc *);
+static void		rge_ephy_config_mac_r25(struct rge_softc *);
+static void		rge_ephy_config_mac_r25b(struct rge_softc *);
+static void		rge_ephy_config_mac_r27(struct rge_softc *);
+static void		rge_mac_config_mcu(struct rge_softc *, enum rge_mac_type);
+static uint64_t	rge_mcu_get_bin_version(uint16_t);
+static void		rge_mcu_set_version(struct rge_softc *, uint64_t);
+static int		rge_phy_config(struct rge_softc *);
+static void		rge_phy_config_mac_r27(struct rge_softc *);
+static void		rge_phy_config_mac_r26(struct rge_softc *);
+static void		rge_phy_config_mac_r25(struct rge_softc *);
+static void		rge_phy_config_mac_r25b(struct rge_softc *);
+static void		rge_phy_config_mac_r25d(struct rge_softc *);
+static void		rge_phy_config_mcu(struct rge_softc *, uint16_t);
 static void		rge_set_macaddr(struct rge_softc *, const uint8_t *);
 static void		rge_get_macaddr(struct rge_softc *, uint8_t *);
+static void		rge_hw_init(struct rge_softc *);
+static void		rge_hw_reset(struct rge_softc *);
+static void		rge_disable_phy_ocp_pwrsave(struct rge_softc *);
+static void		rge_patch_phy_mcu(struct rge_softc *, int);
 #if 0
-void		rge_hw_init(struct rge_softc *);
-void		rge_hw_reset(struct rge_softc *);
-void		rge_disable_phy_ocp_pwrsave(struct rge_softc *);
-void		rge_patch_phy_mcu(struct rge_softc *, int);
 void		rge_add_media_types(struct rge_softc *);
 #endif
 static void		rge_config_imtype(struct rge_softc *, int);
+static void		rge_disable_aspm_clkreq(struct rge_softc *);
+static void		rge_disable_hw_im(struct rge_softc *);
+static void		rge_disable_sim_im(struct rge_softc *);
+static void		rge_setup_sim_im(struct rge_softc *);
+static void		rge_setup_intr(struct rge_softc *, int);
+static void		rge_switch_mcu_ram_page(struct rge_softc *, int);
+static int		rge_exit_oob(struct rge_softc *);
+static void		rge_write_csi(struct rge_softc *, uint32_t, uint32_t);
+static uint32_t	rge_read_csi(struct rge_softc *, uint32_t);
+static void		rge_write_mac_ocp(struct rge_softc *, uint16_t, uint16_t);
+static uint16_t	rge_read_mac_ocp(struct rge_softc *, uint16_t);
+static void		rge_write_ephy(struct rge_softc *, uint16_t, uint16_t);
+static uint16_t	rge_read_ephy(struct rge_softc *, uint16_t);
+static uint16_t	rge_check_ephy_ext_add(struct rge_softc *, uint16_t);
+static void		rge_r27_write_ephy(struct rge_softc *, uint16_t, uint16_t);
+static void		rge_write_phy(struct rge_softc *, uint16_t, uint16_t, uint16_t);
+static uint16_t	rge_read_phy(struct rge_softc *, uint16_t, uint16_t);
+static void		rge_write_phy_ocp(struct rge_softc *, uint16_t, uint16_t);
+static uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
 #if 0
-void		rge_disable_aspm_clkreq(struct rge_softc *);
-void		rge_disable_hw_im(struct rge_softc *);
-void		rge_disable_sim_im(struct rge_softc *);
-void		rge_setup_sim_im(struct rge_softc *);
-void		rge_setup_intr(struct rge_softc *, int);
-void		rge_switch_mcu_ram_page(struct rge_softc *, int);
-int		rge_exit_oob(struct rge_softc *);
-void		rge_write_csi(struct rge_softc *, uint32_t, uint32_t);
-uint32_t	rge_read_csi(struct rge_softc *, uint32_t);
-void		rge_write_mac_ocp(struct rge_softc *, uint16_t, uint16_t);
-uint16_t	rge_read_mac_ocp(struct rge_softc *, uint16_t);
-void		rge_write_ephy(struct rge_softc *, uint16_t, uint16_t);
-uint16_t	rge_read_ephy(struct rge_softc *, uint16_t);
-uint16_t	rge_check_ephy_ext_add(struct rge_softc *, uint16_t);
-void		rge_r27_write_ephy(struct rge_softc *, uint16_t, uint16_t);
-void		rge_write_phy(struct rge_softc *, uint16_t, uint16_t, uint16_t);
-uint16_t	rge_read_phy(struct rge_softc *, uint16_t, uint16_t);
-void		rge_write_phy_ocp(struct rge_softc *, uint16_t, uint16_t);
-uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
 int		rge_get_link_status(struct rge_softc *);
 void		rge_txstart(void *);
 void		rge_tick(void *);
@@ -142,6 +144,7 @@ void		rge_link_state(struct rge_softc *);
 #ifndef SMALL_KERNEL
 int		rge_wol(struct ifnet *, int);
 void		rge_wol_power(struct rge_softc *);
+#endif
 #endif
 
 static const struct {
@@ -156,8 +159,6 @@ static const struct {
 }, mac_r26_mcu[] = {
 	MAC_R26_MCU
 };
-
-#endif
 
 struct rge_matchid {
 	uint16_t vendor;
@@ -353,10 +354,8 @@ rge_attach(device_t dev)
 	}
 #endif
 
-#if 0
 	if (rge_chipinit(sc))
 		goto fail;
-#endif
 
 	rge_get_macaddr(sc, eaddr);
 	device_printf(dev, "MAC address %6D\n", eaddr, ":");
@@ -1603,8 +1602,9 @@ rge_txeof(struct rge_queues *q)
 
 	return (1);
 }
+#endif
 
-int
+static int
 rge_reset(struct rge_softc *sc)
 {
 	int i;
@@ -1624,8 +1624,8 @@ rge_reset(struct rge_softc *sc)
 				break;
 		}
 		if (i == 20) {
-			printf("%s: failed to stop all requests\n",
-			    sc->sc_dev.dv_xname);
+			device_printf(sc->sc_dev,
+			    "failed to stop all requests\n");
 			return ETIMEDOUT;
 		}
 	} else
@@ -1658,13 +1658,14 @@ rge_reset(struct rge_softc *sc)
 			break;
 	}
 	if (i == RGE_TIMEOUT) {
-		printf("%s: reset never completed!\n", sc->sc_dev.dv_xname);
+		device_printf(sc->sc_dev, "reset never completed!\n");
 		return ETIMEDOUT;
 	}
 
 	return 0;
 }
 
+#if 0
 void
 rge_iff(struct rge_softc *sc)
 {
@@ -1715,8 +1716,9 @@ rge_iff(struct rge_softc *sc)
 	RGE_WRITE_4(sc, RGE_MAR0, swap32(hashes[1]));
 	RGE_WRITE_4(sc, RGE_MAR4, swap32(hashes[0]));
 }
+#endif
 
-int
+static int
 rge_chipinit(struct rge_softc *sc)
 {
 	int error;
@@ -1730,7 +1732,7 @@ rge_chipinit(struct rge_softc *sc)
 	return 0;
 }
 
-void
+static void
 rge_set_phy_power(struct rge_softc *sc, int on)
 {
 	int i;
@@ -1752,7 +1754,7 @@ rge_set_phy_power(struct rge_softc *sc, int on)
 	}
 }
 
-void
+static void
 rge_mac_config_mcu(struct rge_softc *sc, enum rge_mac_type type)
 {
 	uint64_t mcodever;
@@ -1866,7 +1868,7 @@ rge_mac_config_mcu(struct rge_softc *sc, enum rge_mac_type type)
 	}
 }
 
-uint64_t
+static uint64_t
 rge_mcu_get_bin_version(uint16_t entries)
 {
 	uint64_t binver = 0;
@@ -1880,7 +1882,7 @@ rge_mcu_get_bin_version(uint16_t entries)
 	return binver;
 }
 
-void
+static void
 rge_mcu_set_version(struct rge_softc *sc, uint64_t mcodever)
 {
 	int i;
@@ -1897,7 +1899,7 @@ rge_mcu_set_version(struct rge_softc *sc, uint64_t mcodever)
 	rge_switch_mcu_ram_page(sc, 0);
 }
 
-void
+static void
 rge_ephy_config(struct rge_softc *sc)
 {
 	switch (sc->rge_type) {
@@ -1915,7 +1917,7 @@ rge_ephy_config(struct rge_softc *sc)
 	}
 }
 
-void
+static void
 rge_ephy_config_mac_r25(struct rge_softc *sc)
 {
 	uint16_t val;
@@ -1940,7 +1942,7 @@ rge_ephy_config_mac_r25(struct rge_softc *sc)
 	rge_write_ephy(sc, 0x0046, 0x0014);
 }
 
-void
+static void
 rge_ephy_config_mac_r25b(struct rge_softc *sc)
 {
 	int i;
@@ -1949,7 +1951,7 @@ rge_ephy_config_mac_r25b(struct rge_softc *sc)
 		rge_write_ephy(sc, mac_r25b_ephy[i].reg, mac_r25b_ephy[i].val);
 }
 
-void
+static void
 rge_ephy_config_mac_r27(struct rge_softc *sc)
 {
 	int i;
@@ -1962,7 +1964,7 @@ rge_ephy_config_mac_r27(struct rge_softc *sc)
 	rge_write_ephy(sc, RGE_EPHYAR_EXT_ADDR, 0);
 }
 
-int
+static int
 rge_phy_config(struct rge_softc *sc)
 {
 	uint16_t val = 0;
@@ -1997,7 +1999,7 @@ rge_phy_config(struct rge_softc *sc)
 		DELAY(1000);
 	}
 	if (i == 2500) {
-		printf("%s: PHY reset failed\n", sc->sc_dev.dv_xname);
+		device_printf(sc->sc_dev, "PHY reset failed\n");
 		return (ETIMEDOUT);
 	}
 
@@ -2051,7 +2053,7 @@ rge_phy_config(struct rge_softc *sc)
 	return (0);
 }
 
-void
+static void
 rge_phy_config_mac_r27(struct rge_softc *sc)
 {
 	uint16_t val;
@@ -2321,7 +2323,7 @@ rge_phy_config_mac_r27(struct rge_softc *sc)
 	RGE_PHY_SETBIT(sc, 0xa430, 0x0003);
 }
 
-void
+static void
 rge_phy_config_mac_r26(struct rge_softc *sc)
 {
 	uint16_t val;
@@ -2601,7 +2603,7 @@ rge_phy_config_mac_r26(struct rge_softc *sc)
 	rge_write_phy_ocp(sc, 0xb54c, val | 0x3700);
 }
 
-void
+static void
 rge_phy_config_mac_r25(struct rge_softc *sc)
 {
 	uint16_t val;
@@ -2685,7 +2687,7 @@ rge_phy_config_mac_r25(struct rge_softc *sc)
 	RGE_PHY_SETBIT(sc, 0xa424, 0x0008);
 }
 
-void
+static void
 rge_phy_config_mac_r25b(struct rge_softc *sc)
 {
 	uint16_t val;
@@ -2722,7 +2724,7 @@ rge_phy_config_mac_r25b(struct rge_softc *sc)
 	RGE_PHY_SETBIT(sc, 0xa424, 0x0008);
 }
 
-void
+static void
 rge_phy_config_mac_r25d(struct rge_softc *sc)
 {
 	uint16_t val;
@@ -2915,7 +2917,7 @@ rge_phy_config_mac_r25d(struct rge_softc *sc)
 	RGE_PHY_SETBIT(sc, 0xa442, 0x0080);
 }
 
-void
+static void
 rge_phy_config_mcu(struct rge_softc *sc, uint16_t rcodever)
 {
 	if (sc->rge_rcodever != rcodever) {
@@ -2985,7 +2987,6 @@ rge_phy_config_mcu(struct rge_softc *sc, uint16_t rcodever)
 		rge_write_phy_ocp(sc, 0xa438, rcodever);
 	}
 }
-#endif
 
 static void
 rge_set_macaddr(struct rge_softc *sc, const uint8_t *addr)
@@ -3012,8 +3013,7 @@ rge_get_macaddr(struct rge_softc *sc, uint8_t *addr)
 	rge_set_macaddr(sc, addr);
 }
 
-#if 0
-void
+static void
 rge_hw_init(struct rge_softc *sc)
 {
 	uint16_t reg;
@@ -3053,7 +3053,7 @@ rge_hw_init(struct rge_softc *sc)
 	    rge_read_csi(sc, 0x108) | 0x00100000);
 }
 
-void
+static void
 rge_hw_reset(struct rge_softc *sc)
 {
 	/* Disable interrupts */
@@ -3069,7 +3069,7 @@ rge_hw_reset(struct rge_softc *sc)
 	rge_reset(sc);
 }
 
-void
+static void
 rge_disable_phy_ocp_pwrsave(struct rge_softc *sc)
 {
 	if (rge_read_phy_ocp(sc, 0xc416) != 0x0500) {
@@ -3080,7 +3080,7 @@ rge_disable_phy_ocp_pwrsave(struct rge_softc *sc)
 	}
 }
 
-void
+static void
 rge_patch_phy_mcu(struct rge_softc *sc, int set)
 {
 	int i;
@@ -3101,10 +3101,11 @@ rge_patch_phy_mcu(struct rge_softc *sc, int set)
 		DELAY(100);
 	}
 	if (i == 1000)
-		printf("%s: timeout waiting to patch phy mcu\n",
-		    sc->sc_dev.dv_xname);
+		device_printf(sc->sc_dev,
+		    "timeout waiting to patch phy mcu\n");
 }
 
+#if 0
 void
 rge_add_media_types(struct rge_softc *sc)
 {
@@ -3144,8 +3145,7 @@ rge_config_imtype(struct rge_softc *sc, int imtype)
 	}
 }
 
-#if 0
-void
+static void
 rge_disable_aspm_clkreq(struct rge_softc *sc)
 {
 	int unlock = 1;
@@ -3167,20 +3167,20 @@ rge_disable_aspm_clkreq(struct rge_softc *sc)
 		RGE_CLRBIT_1(sc, RGE_EECMD, RGE_EECMD_WRITECFG);
 }
 
-void
+static void
 rge_disable_hw_im(struct rge_softc *sc)
 {
 	RGE_WRITE_2(sc, RGE_IM, 0);
 }
 
-void
+static void
 rge_disable_sim_im(struct rge_softc *sc)
 {
 	RGE_WRITE_4(sc, RGE_TIMERINT0, 0);
 	sc->rge_timerintr = 0;
 }
 
-void
+static void
 rge_setup_sim_im(struct rge_softc *sc)
 {
 	RGE_WRITE_4(sc, RGE_TIMERINT0, 0x2600);
@@ -3188,7 +3188,7 @@ rge_setup_sim_im(struct rge_softc *sc)
 	sc->rge_timerintr = 1;
 }
 
-void
+static void
 rge_setup_intr(struct rge_softc *sc, int imtype)
 {
 	rge_config_imtype(sc, imtype);
@@ -3206,11 +3206,11 @@ rge_setup_intr(struct rge_softc *sc, int imtype)
 		rge_setup_sim_im(sc);
 		break;
 	default:
-		panic("%s: unknown imtype %d", sc->sc_dev.dv_xname, imtype);
+		device_printf(sc->sc_dev, "unknown imtype %d", imtype);
 	}
 }
 
-void
+static void
 rge_switch_mcu_ram_page(struct rge_softc *sc, int page)
 {
 	uint16_t val;
@@ -3220,7 +3220,7 @@ rge_switch_mcu_ram_page(struct rge_softc *sc, int page)
 	rge_write_mac_ocp(sc, 0xe446, val);
 }
 
-int
+static int
 rge_exit_oob(struct rge_softc *sc)
 {
 	int error, i;
@@ -3267,7 +3267,7 @@ rge_exit_oob(struct rge_softc *sc)
 	return 0;
 }
 
-void
+static void
 rge_write_csi(struct rge_softc *sc, uint32_t reg, uint32_t val)
 {
 	int i;
@@ -3285,7 +3285,7 @@ rge_write_csi(struct rge_softc *sc, uint32_t reg, uint32_t val)
 	DELAY(20);
 }
 
-uint32_t
+static uint32_t
 rge_read_csi(struct rge_softc *sc, uint32_t reg)
 {
 	int i;
@@ -3304,7 +3304,7 @@ rge_read_csi(struct rge_softc *sc, uint32_t reg)
 	return (RGE_READ_4(sc, RGE_CSIDR));
 }
 
-void
+static void
 rge_write_mac_ocp(struct rge_softc *sc, uint16_t reg, uint16_t val)
 {
 	uint32_t tmp;
@@ -3315,7 +3315,7 @@ rge_write_mac_ocp(struct rge_softc *sc, uint16_t reg, uint16_t val)
 	RGE_WRITE_4(sc, RGE_MACOCP, tmp);
 }
 
-uint16_t
+static uint16_t
 rge_read_mac_ocp(struct rge_softc *sc, uint16_t reg)
 {
 	uint32_t val;
@@ -3326,7 +3326,7 @@ rge_read_mac_ocp(struct rge_softc *sc, uint16_t reg)
 	return (RGE_READ_4(sc, RGE_MACOCP) & RGE_MACOCP_DATA_MASK);
 }
 
-void
+static void
 rge_write_ephy(struct rge_softc *sc, uint16_t reg, uint16_t val)
 {
 	uint32_t tmp;
@@ -3345,7 +3345,7 @@ rge_write_ephy(struct rge_softc *sc, uint16_t reg, uint16_t val)
 	DELAY(20);
 }
 
-uint16_t
+static uint16_t
 rge_read_ephy(struct rge_softc *sc, uint16_t reg)
 {
 	uint32_t val;
@@ -3366,7 +3366,7 @@ rge_read_ephy(struct rge_softc *sc, uint16_t reg)
 	return (val & RGE_EPHYAR_DATA_MASK);
 }
 
-uint16_t
+static uint16_t
 rge_check_ephy_ext_add(struct rge_softc *sc, uint16_t reg)
 {
 	uint16_t val;
@@ -3377,13 +3377,13 @@ rge_check_ephy_ext_add(struct rge_softc *sc, uint16_t reg)
 	return reg & 0x0fff;
 }
 
-void
+static void
 rge_r27_write_ephy(struct rge_softc *sc, uint16_t reg, uint16_t val)
 {
 	rge_write_ephy(sc, rge_check_ephy_ext_add(sc, reg), val);
 }
 
-void
+static void
 rge_write_phy(struct rge_softc *sc, uint16_t addr, uint16_t reg, uint16_t val)
 {
 	uint16_t off, phyaddr;
@@ -3398,7 +3398,7 @@ rge_write_phy(struct rge_softc *sc, uint16_t addr, uint16_t reg, uint16_t val)
 	rge_write_phy_ocp(sc, phyaddr, val);
 }
 
-uint16_t
+static uint16_t
 rge_read_phy(struct rge_softc *sc, uint16_t addr, uint16_t reg)
 {
 	uint16_t off, phyaddr;
@@ -3413,7 +3413,7 @@ rge_read_phy(struct rge_softc *sc, uint16_t addr, uint16_t reg)
 	return (rge_read_phy_ocp(sc, phyaddr));
 }
 
-void
+static void
 rge_write_phy_ocp(struct rge_softc *sc, uint16_t reg, uint16_t val)
 {
 	uint32_t tmp;
@@ -3430,7 +3430,7 @@ rge_write_phy_ocp(struct rge_softc *sc, uint16_t reg, uint16_t val)
 	}
 }
 
-uint16_t
+static uint16_t
 rge_read_phy_ocp(struct rge_softc *sc, uint16_t reg)
 {
 	uint32_t val;
@@ -3449,12 +3449,13 @@ rge_read_phy_ocp(struct rge_softc *sc, uint16_t reg)
 	return (val & RGE_PHYOCP_DATA_MASK);
 }
 
-int
+static int
 rge_get_link_status(struct rge_softc *sc)
 {
 	return ((RGE_READ_2(sc, RGE_PHYSTAT) & RGE_PHYSTAT_LINK) ? 1 : 0);
 }
 
+#if 0
 void
 rge_txstart(void *arg)
 {

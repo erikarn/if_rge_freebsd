@@ -83,8 +83,10 @@ static void	rge_init_if(void *);
 #if 0
 void		rge_init(struct ifnet *);
 void		rge_stop(struct ifnet *);
-int		rge_ifmedia_upd(struct ifnet *);
-void		rge_ifmedia_sts(struct ifnet *, struct ifmediareq *);
+#endif
+static int		rge_ifmedia_upd(if_t);
+static void		rge_ifmedia_sts(if_t, struct ifmediareq *);
+#if 0
 int		rge_allocmem(struct rge_softc *);
 int		rge_newbuf(struct rge_queues *);
 void		rge_rx_list_init(struct rge_queues *);
@@ -119,9 +121,7 @@ static void		rge_hw_init(struct rge_softc *);
 static void		rge_hw_reset(struct rge_softc *);
 static void		rge_disable_phy_ocp_pwrsave(struct rge_softc *);
 static void		rge_patch_phy_mcu(struct rge_softc *, int);
-#if 0
-void		rge_add_media_types(struct rge_softc *);
-#endif
+static void		rge_add_media_types(struct rge_softc *);
 static void		rge_config_imtype(struct rge_softc *, int);
 static void		rge_disable_aspm_clkreq(struct rge_softc *);
 static void		rge_disable_hw_im(struct rge_softc *);
@@ -142,8 +142,8 @@ static void		rge_write_phy(struct rge_softc *, uint16_t, uint16_t, uint16_t);
 static uint16_t	rge_read_phy(struct rge_softc *, uint16_t, uint16_t);
 static void		rge_write_phy_ocp(struct rge_softc *, uint16_t, uint16_t);
 static uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
+static int		rge_get_link_status(struct rge_softc *);
 #if 0
-int		rge_get_link_status(struct rge_softc *);
 void		rge_txstart(void *);
 void		rge_tick(void *);
 void		rge_link_state(struct rge_softc *);
@@ -420,6 +420,14 @@ rge_attach(device_t dev)
 		return;
 #endif
 
+	/* Initialize ifmedia structures. */
+	ifmedia_init(&sc->sc_media, IFM_IMASK, rge_ifmedia_upd,
+	    rge_ifmedia_sts);
+	rge_add_media_types(sc);
+	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
+	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
+	sc->sc_media.ifm_media = sc->sc_media.ifm_cur->ifm_media;
+
 	rge_attach_if(sc, eaddr);
 
 #if 0
@@ -452,7 +460,9 @@ rge_attach(device_t dev)
 #if 0
 	timeout_set(&sc->sc_timeout, rge_tick, sc);
 	task_set(&sc->sc_task, rge_txstart, sc);
+#endif
 
+#if 0
 	/* Initialize ifmedia structures. */
 	ifmedia_init(&sc->sc_media, IFM_IMASK, rge_ifmedia_upd,
 	    rge_ifmedia_sts);
@@ -1155,14 +1165,15 @@ rge_stop(struct ifnet *ifp)
 		}
 	}
 }
+#endif
 
 /*
  * Set media options.
  */
-int
-rge_ifmedia_upd(struct ifnet *ifp)
+static int
+rge_ifmedia_upd(if_t ifp)
 {
-	struct rge_softc *sc = ifp->if_softc;
+	struct rge_softc *sc = if_getsoftc(ifp);
 	struct ifmedia *ifm = &sc->sc_media;
 	int anar, gig, val;
 
@@ -1201,18 +1212,18 @@ rge_ifmedia_upd(struct ifnet *ifp)
 		break;
 	case IFM_10G_T:
 		val |= RGE_ADV_10000TFDX;
-		ifp->if_baudrate = IF_Gbps(10);
+		if_setbaudrate(ifp, IF_Gbps(10));
 		break;
 	case IFM_5000_T:
 		val |= RGE_ADV_5000TFDX;
-		ifp->if_baudrate = IF_Gbps(5);
+		if_setbaudrate(ifp, IF_Gbps(5));
 		break;
 	case IFM_2500_T:
 		val |= RGE_ADV_2500TFDX;
-		ifp->if_baudrate = IF_Mbps(2500);
+		if_setbaudrate(ifp, IF_Mbps(2500));
 		break;
 	case IFM_1000_T:
-		ifp->if_baudrate = IF_Gbps(1);
+		if_setbaudrate(ifp, IF_Gbps(1));
 		break;
 	case IFM_100_TX:
 		gig = rge_read_phy(sc, 0, MII_100T2CR) &
@@ -1220,17 +1231,17 @@ rge_ifmedia_upd(struct ifnet *ifp)
 		anar = ((ifm->ifm_media & IFM_GMASK) == IFM_FDX) ?
 		    ANAR_TX | ANAR_TX_FD | ANAR_10_FD | ANAR_10 :
 		    ANAR_TX | ANAR_10_FD | ANAR_10;
-		ifp->if_baudrate = IF_Mbps(100);
+		if_setbaudrate(ifp, IF_Mbps(100));
 		break;
 	case IFM_10_T:
 		gig = rge_read_phy(sc, 0, MII_100T2CR) &
 		    ~(GTCR_ADV_1000TFDX | GTCR_ADV_1000THDX);
 		anar = ((ifm->ifm_media & IFM_GMASK) == IFM_FDX) ?
 		    ANAR_10_FD | ANAR_10 : ANAR_10;
-		ifp->if_baudrate = IF_Mbps(10);
+		if_setbaudrate(ifp, IF_Mbps(10));
 		break;
 	default:
-		printf("%s: unsupported media type\n", sc->sc_dev.dv_xname);
+		device_printf(sc->sc_dev, "unsupported media type\n");
 		return (EINVAL);
 	}
 
@@ -1246,10 +1257,10 @@ rge_ifmedia_upd(struct ifnet *ifp)
 /*
  * Report current media status.
  */
-void
-rge_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
+static void
+rge_ifmedia_sts(if_t ifp, struct ifmediareq *ifmr)
 {
-	struct rge_softc *sc = ifp->if_softc;
+	struct rge_softc *sc = if_getsoftc(ifp);
 	uint16_t status = 0;
 
 	ifmr->ifm_status = IFM_AVALID;
@@ -1283,6 +1294,7 @@ rge_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 	}
 }
 
+#if 0
 /*
  * Allocate memory for RX/TX rings.
  */
@@ -3212,8 +3224,7 @@ rge_patch_phy_mcu(struct rge_softc *sc, int set)
 		    "timeout waiting to patch phy mcu\n");
 }
 
-#if 0
-void
+static void
 rge_add_media_types(struct rge_softc *sc)
 {
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_10_T, 0, NULL);
@@ -3235,7 +3246,6 @@ rge_add_media_types(struct rge_softc *sc)
 		    0, NULL);
 	}
 }
-#endif
 
 static void
 rge_config_imtype(struct rge_softc *sc, int imtype)

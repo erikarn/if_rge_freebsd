@@ -492,6 +492,18 @@ rge_detach(device_t dev)
 {
 	struct rge_softc *sc = device_get_softc(dev);
 
+	/* TODO: stop DMA */
+
+	/* TODO: stop NIC */
+
+	/* TODO: wait for completion */
+
+	/* TODO: free pending TX mbufs */
+
+	/* TODO: free RX mbuf ring */
+
+	/* TODO: rge_freemem() - free TX/RX DMA rings / maps */
+
 	if (sc->sc_ifp) {
 		if (sc->sc_ether_attached)
 			ether_ifdetach(sc->sc_ifp);
@@ -500,6 +512,8 @@ rge_detach(device_t dev)
 
 	if (sc->sc_dmat)
 		bus_dma_tag_destroy(sc->sc_dmat);
+
+	/* TODO: free interrupt allocation */
 
 	if (sc->sc_bres) {
 		bus_release_resource(dev, SYS_RES_MEMORY,

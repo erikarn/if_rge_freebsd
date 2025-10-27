@@ -216,13 +216,14 @@ rge_attach_if(struct rge_softc *sc, const char *eaddr)
 
 	/* Attach interface */
 	ether_ifattach(sc->sc_ifp, eaddr);
+	sc->sc_ether_attached = true;
 
 	/* TODO: set offload/TSO as appropriate */
-	/* TODO: set jumbo tx/rx */
+	/* TODO: set jumbo tx/rx; max MTU */
 	/* TODO: set WOL */
 	/* TODO: set vlan as appropriate */
 
-	if_setsendqlen(sc->sc_ifp, 128); /* XXX */
+	if_setsendqlen(sc->sc_ifp, RGE_TX_LIST_CNT - 1);
 	if_setsendqready(sc->sc_ifp);
 }
 
@@ -477,7 +478,8 @@ rge_detach(device_t dev)
 	struct rge_softc *sc = device_get_softc(dev);
 
 	if (sc->sc_ifp) {
-		ether_ifdetach(sc->sc_ifp);
+		if (sc->sc_ether_attached)
+			ether_ifdetach(sc->sc_ifp);
 		if_free(sc->sc_ifp);
 	}
 

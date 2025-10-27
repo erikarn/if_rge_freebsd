@@ -86,8 +86,9 @@ void		rge_stop(struct ifnet *);
 #endif
 static int		rge_ifmedia_upd(if_t);
 static void		rge_ifmedia_sts(if_t, struct ifmediareq *);
+static int		rge_allocmem(struct rge_softc *);
+static int		rge_freemem(struct rge_softc *);
 #if 0
-int		rge_allocmem(struct rge_softc *);
 int		rge_newbuf(struct rge_queues *);
 void		rge_rx_list_init(struct rge_queues *);
 void		rge_tx_list_init(struct rge_queues *);
@@ -232,6 +233,7 @@ rge_attach(device_t dev)
 {
 	uint8_t eaddr[ETHER_ADDR_LEN];
 	struct rge_softc *sc;
+	struct rge_queues *q;
 	uint32_t hwrev;
 	int rid;
 	int error;
@@ -300,18 +302,16 @@ rge_attach(device_t dev)
 	}
 #endif
 
-#if 0
 	q = malloc(sizeof(struct rge_queues), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (q == NULL) {
-		printf(": unable to allocate queue memory\n");
-		return;
+		device_printf(dev, "Unable to malloc rge_queues memory\n");
+		goto fail;
 	}
 	q->q_sc = sc;
 	q->q_index = 0;
 
 	sc->sc_queues = q;
 	sc->sc_nqueues = 1;
-#endif
 
 #if 0
 	/*
@@ -344,12 +344,12 @@ rge_attach(device_t dev)
 #endif
 
 	/* Allocate top level bus DMA tag */
-	error = bus_dma_tag_create(bus_get_dma_tag(dev), 4, 0,
+	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1, 0,
 	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
 	    NULL,
-	    0x3ffff, /* XXX maxsize */
-	    RGE_TX_NSEGS, /* nsegments */
-	    0x3ffff, /* XXX maxsegsize */
+	    0x00ffffff, /* XXX maxsize */
+	    64, /* XXX nsegments */
+	    0x00ffffff, /* XXX maxsegsize */
 	    BUS_DMA_ALLOCNOW, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat);
@@ -358,6 +358,76 @@ rge_attach(device_t dev)
 		    "couldn't allocate device DMA tag (error %d)\n", error);
 		    goto fail;
 	}
+
+	/* Allocate TX/RX descriptor and buffer tags */
+	error = bus_dma_tag_create(sc->sc_dmat,
+	    RGE_ALIGN, /* alignment */
+	    0, /* boundary */
+	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    NULL,
+	    0x3ffff, /* XXX maxsize */
+	    64, /* XXX nsegments */
+	    0x3ffff, /* XXX maxsegsize */
+	    BUS_DMA_ALLOCNOW, /* flags */
+	    NULL, NULL, /* lockfunc, lockarg */
+	    &sc->sc_dmat_tx_desc);
+	if (error) {
+		device_printf(dev,
+		    "couldn't allocate device TX descriptor DMA tag (error %d)\n", error);
+		    goto fail;
+	}
+
+	error = bus_dma_tag_create(sc->sc_dmat,
+	    1, /* alignment */
+	    0, /* boundary */
+	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    NULL,
+	    RGE_JUMBO_FRAMELEN, /* XXX maxsize */
+	    RGE_TX_NSEGS, /* XXX nsegments */
+	    RGE_JUMBO_FRAMELEN, /* XXX maxsegsize */
+	    BUS_DMA_ALLOCNOW, /* flags */
+	    NULL, NULL, /* lockfunc, lockarg */
+	    &sc->sc_dmat_tx_buf);
+	if (error) {
+		device_printf(dev,
+		    "couldn't allocate device TX buffer DMA tag (error %d)\n", error);
+		    goto fail;
+	}
+
+	error = bus_dma_tag_create(sc->sc_dmat,
+	    RGE_ALIGN, /* alignment */
+	    0, /* boundary */
+	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    NULL,
+	    0x3ffff, /* XXX maxsize */
+	    64, /* XXX nsegments */
+	    0x3ffff, /* XXX maxsegsize */
+	    BUS_DMA_ALLOCNOW, /* flags */
+	    NULL, NULL, /* lockfunc, lockarg */
+	    &sc->sc_dmat_rx_desc);
+	if (error) {
+		device_printf(dev,
+		    "couldn't allocate device RX descriptor DMA tag (error %d)\n", error);
+		    goto fail;
+	}
+
+	error = bus_dma_tag_create(sc->sc_dmat,
+	    1, /* alignment */
+	    0, /* boundary */
+	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    NULL,
+	    0x3ffff, /* XXX maxsize */
+	    64, /* XXX nsegments */
+	    0x3ffff, /* XXX maxsegsize */
+	    BUS_DMA_ALLOCNOW, /* flags */
+	    NULL, NULL, /* lockfunc, lockarg */
+	    &sc->sc_dmat_rx_buf);
+	if (error) {
+		device_printf(dev,
+		    "couldn't allocate device RX buffer DMA tag (error %d)\n", error);
+		    goto fail;
+	}
+
 
 	/* Determine hardware revision */
 	hwrev = RGE_READ_4(sc, RGE_TXCFG) & RGE_TXCFG_HWREV;
@@ -420,10 +490,9 @@ rge_attach(device_t dev)
 
 #if 0
 	memcpy(sc->sc_arpcom.ac_enaddr, eaddr, ETHER_ADDR_LEN);
-
-	if (rge_allocmem(sc))
-		return;
 #endif
+	if (rge_allocmem(sc))
+		goto fail;
 
 	/* Initialize ifmedia structures. */
 	ifmedia_init(&sc->sc_media, IFM_IMASK, rge_ifmedia_upd,
@@ -502,23 +571,45 @@ rge_detach(device_t dev)
 
 	/* TODO: free RX mbuf ring */
 
-	/* TODO: rge_freemem() - free TX/RX DMA rings / maps */
+	/* Free descriptor memory */
+	device_printf(sc->sc_dev, "%s: freemem\n", __func__);
+	rge_freemem(sc);
 
 	if (sc->sc_ifp) {
+		device_printf(sc->sc_dev, "%s: ifdetach/if_free\n", __func__);
 		if (sc->sc_ether_attached)
 			ether_ifdetach(sc->sc_ifp);
 		if_free(sc->sc_ifp);
 	}
 
+	device_printf(sc->sc_dev, "%s: sc_dmat_tx_desc\n", __func__);
+	if (sc->sc_dmat_tx_desc)
+		bus_dma_tag_destroy(sc->sc_dmat_tx_desc);
+	device_printf(sc->sc_dev, "%s: sc_dmat_tx_buf\n", __func__);
+	if (sc->sc_dmat_tx_buf)
+		bus_dma_tag_destroy(sc->sc_dmat_tx_buf);
+	device_printf(sc->sc_dev, "%s: sc_dmat_rx_desc\n", __func__);
+	if (sc->sc_dmat_rx_desc)
+		bus_dma_tag_destroy(sc->sc_dmat_rx_desc);
+	device_printf(sc->sc_dev, "%s: sc_dmat_rx_buf\n", __func__);
+	if (sc->sc_dmat_rx_buf)
+		bus_dma_tag_destroy(sc->sc_dmat_rx_buf);
+	device_printf(sc->sc_dev, "%s: sc_dmat\n", __func__);
 	if (sc->sc_dmat)
 		bus_dma_tag_destroy(sc->sc_dmat);
 
 	/* TODO: free interrupt allocation */
 
 	if (sc->sc_bres) {
+		device_printf(sc->sc_dev, "%s: release mmio\n", __func__);
 		bus_release_resource(dev, SYS_RES_MEMORY,
 		    rman_get_rid(sc->sc_bres), sc->sc_bres);
 		sc->sc_bres = NULL;
+	}
+
+	if (sc->sc_queues) {
+		free(sc->sc_queues, M_DEVBUF);
+		sc->sc_queues = NULL;
 	}
 
 	mtx_destroy(&sc->sc_mtx);
@@ -1313,54 +1404,58 @@ rge_ifmedia_sts(if_t ifp, struct ifmediareq *ifmr)
 	}
 }
 
-#if 0
+static void
+rge_dma_load_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
+{
+	bus_dma_segment_t *paddr = (bus_dma_segment_t *) arg;
+	/* TODO: we only handle one segment here! */
+	/* TODO: print if error! */
+	*paddr = segs[0];
+}
+
 /*
  * Allocate memory for RX/TX rings.
  */
-int
+static int
 rge_allocmem(struct rge_softc *sc)
 {
 	struct rge_queues *q = sc->sc_queues;
-	int error, i;
+	int error;
+//	int i;
 
 	/* Allocate DMA'able memory for the TX ring. */
-	error = bus_dmamap_create(sc->sc_dmat, RGE_TX_LIST_SZ, 1,
-	    RGE_TX_LIST_SZ, 0, BUS_DMA_NOWAIT | BUS_DMA_ALLOCNOW,
+	error = bus_dmamap_create(sc->sc_dmat, BUS_DMA_COHERENT,
 	    &q->q_tx.rge_tx_list_map);
 	if (error) {
-		printf("%s: can't create TX list map\n", sc->sc_dev.dv_xname);
-		return (error);
+		device_printf(sc->sc_dev, "%s: error (create tx_list.map) (%d)\n",
+		    __func__, error);
+		goto error;
 	}
-	error = bus_dmamem_alloc(sc->sc_dmat, RGE_TX_LIST_SZ, RGE_ALIGN, 0,
-	    &q->q_tx.rge_tx_listseg, 1, &q->q_tx.rge_tx_listnseg,
-	    BUS_DMA_NOWAIT| BUS_DMA_ZERO);
+	error = bus_dmamem_alloc(sc->sc_dmat_tx_desc,
+	    (void **) &q->q_tx.rge_tx_list, BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT,
+	    &q->q_tx.rge_tx_list_map);
 	if (error) {
-		printf("%s: can't alloc TX list\n", sc->sc_dev.dv_xname);
-		return (error);
+		device_printf(sc->sc_dev, "%s: error (alloc tx_list.map) (%d)\n",
+		    __func__, error);
+		goto error;
 	}
 
 	/* Load the map for the TX ring. */
-	error = bus_dmamem_map(sc->sc_dmat, &q->q_tx.rge_tx_listseg,
-	    q->q_tx.rge_tx_listnseg, RGE_TX_LIST_SZ,
-	    (caddr_t *)&q->q_tx.rge_tx_list, BUS_DMA_NOWAIT | BUS_DMA_COHERENT);
+	error = bus_dmamap_load(sc->sc_dmat_tx_desc,
+	    q->q_tx.rge_tx_list_map,
+	    &q->q_tx.rge_tx_list,
+	    RGE_TX_LIST_SZ,
+	    rge_dma_load_cb,
+	    (void *) &q->q_tx.rge_tx_listseg,
+	    BUS_DMA_NOWAIT);
+
 	if (error) {
-		printf("%s: can't map TX dma buffers\n", sc->sc_dev.dv_xname);
-		bus_dmamem_free(sc->sc_dmat, &q->q_tx.rge_tx_listseg,
-		    q->q_tx.rge_tx_listnseg);
-		return (error);
-	}
-	error = bus_dmamap_load(sc->sc_dmat, q->q_tx.rge_tx_list_map,
-	    q->q_tx.rge_tx_list, RGE_TX_LIST_SZ, NULL, BUS_DMA_NOWAIT);
-	if (error) {
-		printf("%s: can't load TX dma map\n", sc->sc_dev.dv_xname);
-		bus_dmamap_destroy(sc->sc_dmat, q->q_tx.rge_tx_list_map);
-		bus_dmamem_unmap(sc->sc_dmat,
-		    (caddr_t)q->q_tx.rge_tx_list, RGE_TX_LIST_SZ);
-		bus_dmamem_free(sc->sc_dmat, &q->q_tx.rge_tx_listseg,
-		    q->q_tx.rge_tx_listnseg);
-		return (error);
+		device_printf(sc->sc_dev, "%s: error (load tx_list.map) (%d)\n",
+		    __func__, error);
+		goto error;
 	}
 
+#if 0
 	/* Create DMA maps for TX buffers. */
 	for (i = 0; i < RGE_TX_LIST_CNT; i++) {
 		error = bus_dmamap_create(sc->sc_dmat, RGE_JUMBO_FRAMELEN,
@@ -1373,7 +1468,9 @@ rge_allocmem(struct rge_softc *sc)
 			return (error);
 		}
 	}
+#endif
 
+#if 0
 	/* Allocate DMA'able memory for the RX ring. */
 	error = bus_dmamap_create(sc->sc_dmat, RGE_RX_LIST_SZ, 1,
 	    RGE_RX_LIST_SZ, 0, BUS_DMA_NOWAIT | BUS_DMA_ALLOCNOW,
@@ -1389,7 +1486,9 @@ rge_allocmem(struct rge_softc *sc)
 		printf("%s: can't alloc RX list\n", sc->sc_dev.dv_xname);
 		return (error);
 	}
+#endif
 
+#if 0
 	/* Load the map for the RX ring. */
 	error = bus_dmamem_map(sc->sc_dmat, &q->q_rx.rge_rx_listseg,
 	    q->q_rx.rge_rx_listnseg, RGE_RX_LIST_SZ,
@@ -1411,7 +1510,9 @@ rge_allocmem(struct rge_softc *sc)
 		    q->q_rx.rge_rx_listnseg);
 		return (error);
 	}
+#endif
 
+#if 0
 	/* Create DMA maps for RX buffers. */
 	for (i = 0; i < RGE_RX_LIST_CNT; i++) {
 		error = bus_dmamap_create(sc->sc_dmat, RGE_JUMBO_FRAMELEN, 1,
@@ -1423,10 +1524,36 @@ rge_allocmem(struct rge_softc *sc)
 			return (error);
 		}
 	}
+#endif
+
+	return (0);
+error:
 
 	return (error);
 }
 
+static int
+rge_freemem(struct rge_softc *sc)
+{
+	struct rge_queues *q = sc->sc_queues;
+
+	/* TX desc */
+	bus_dmamap_unload(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map);
+	bus_dmamem_free(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list,
+	    q->q_tx.rge_tx_list_map);
+	memset(&q->q_tx, 0, sizeof(q->q_tx));
+
+	/* TX buf */
+	/* RX desc */
+	/* RX buf */
+	device_printf(sc->sc_dev, "%s: TODO: free DMA TX buf!\n", __func__);
+	device_printf(sc->sc_dev, "%s: TODO: free DMA RX desc!\n", __func__);
+	device_printf(sc->sc_dev, "%s: TODO: free DMA RX buf!\n", __func__);
+
+	return (0);
+}
+
+#if 0
 /*
  * Initialize the RX descriptor and attach an mbuf cluster.
  */

@@ -338,7 +338,7 @@ struct rge_tx {
 	int			rge_txq_considx;
 
 	bus_dma_segment_t	rge_tx_listseg;
-	int			rge_tx_listnseg;
+//	int			rge_tx_listnseg;
 	bus_dmamap_t		rge_tx_list_map;
 	struct rge_tx_desc	*rge_tx_list;
 };
@@ -408,6 +408,11 @@ struct rge_softc {
 	bus_space_tag_t		rge_btag;	/* bus space tag */
 	bus_size_t		rge_bsize;
 	bus_dma_tag_t		sc_dmat;
+	bus_dma_tag_t		sc_dmat_tx_desc;
+	bus_dma_tag_t		sc_dmat_tx_buf;
+	bus_dma_tag_t		sc_dmat_rx_desc;
+	bus_dma_tag_t		sc_dmat_rx_buf;
+
 //	pci_chipset_tag_t	sc_pc;
 //	pcitag_t		sc_tag;
 	struct ifmedia		sc_media;	/* media info */

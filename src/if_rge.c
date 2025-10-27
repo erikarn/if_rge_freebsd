@@ -407,10 +407,15 @@ rge_attach(device_t dev)
 	}
 #endif
 
-	if (rge_chipinit(sc))
+	RGE_LOCK(sc);
+	if (rge_chipinit(sc)) {
+		RGE_UNLOCK(sc);
 		goto fail;
+	}
 
 	rge_get_macaddr(sc, eaddr);
+	RGE_UNLOCK(sc);
+
 	device_printf(dev, "MAC address %6D\n", eaddr, ":");
 
 #if 0
@@ -1837,10 +1842,17 @@ rge_iff(struct rge_softc *sc)
 }
 #endif
 
+/**
+ * @brief Do initial chip power-on and setup.
+ *
+ * Must be called with the driver lock held.
+ */
 static int
 rge_chipinit(struct rge_softc *sc)
 {
 	int error;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	if ((error = rge_exit_oob(sc)) != 0)
 		return error;
@@ -3118,10 +3130,20 @@ rge_set_macaddr(struct rge_softc *sc, const uint8_t *addr)
 	RGE_CLRBIT_1(sc, RGE_EECMD, RGE_EECMD_WRITECFG);
 }
 
+/**
+ * @brief Read the mac address from the NIC EEPROM.
+ *
+ * Note this also calls rge_set_macaddr() which programs
+ * it into the PPROM; I'm not sure why.
+ *
+ * Must be called with the driver lock held.
+ */
 static void
 rge_get_macaddr(struct rge_softc *sc, uint8_t *addr)
 {
 	int i;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	for (i = 0; i < ETHER_ADDR_LEN; i++)
 		addr[i] = RGE_READ_1(sc, RGE_MAC0 + i);
@@ -3132,11 +3154,18 @@ rge_get_macaddr(struct rge_softc *sc, uint8_t *addr)
 	rge_set_macaddr(sc, addr);
 }
 
+/**
+ * @brief MAC hardware initialisation
+ *
+ * Must be called with the driver lock held.
+ */
 static void
 rge_hw_init(struct rge_softc *sc)
 {
 	uint16_t reg;
 	int i;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	rge_disable_aspm_clkreq(sc);
 	RGE_CLRBIT_1(sc, 0xf1, 0x80);

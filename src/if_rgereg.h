@@ -16,6 +16,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#define	RGE_LOCK(sc)		(mtx_lock(&sc->sc_mtx))
+#define	RGE_UNLOCK(sc)		(mtx_unlock(&sc->sc_mtx))
+#define	RGE_ASSERT_LOCKED(sc)	(mtx_assert(&sc->sc_mtx, MA_OWNED))
+#define	RGE_ASSERT_UNLOCKED(sc)	(mtx_assert(&sc->sc_mtx, MA_NOTOWNED))
+
 #define RGE_PCI_BAR0		PCI_MAPREG_START
 #define RGE_PCI_BAR1		(PCI_MAPREG_START + 4)
 #define RGE_PCI_BAR2		(PCI_MAPREG_START + 8)

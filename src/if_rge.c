@@ -35,6 +35,14 @@
 #include <netinet/if_ether.h>
 
 #include <net/bpf.h>
+#include <net/ethernet.h>
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/if_arp.h>
+#include <net/if_dl.h>
+#include <net/if_media.h>
+#include <net/if_types.h>
+#include <net/if_vlan_var.h>
 
 #include <machine/bus.h>
 #include <machine/resource.h>
@@ -58,7 +66,6 @@ int rge_debug = 0;
 #endif
 
 #if 0
-int		rge_match(struct device *, void *, void *);
 void		rge_attach(struct device *, struct device *, void *);
 int		rge_activate(struct device *, int);
 int		rge_intr(void *);
@@ -143,16 +150,6 @@ static const struct {
 	MAC_R26_MCU
 };
 
-#if 0
-const struct cfattach rge_ca = {
-	sizeof(struct rge_softc), rge_match, rge_attach, NULL, rge_activate
-};
-
-struct cfdriver rge_cd = {
-	NULL, "rge", DV_IFNET
-};
-#endif
-
 #endif
 
 struct rge_matchid {
@@ -188,17 +185,18 @@ rge_probe(device_t dev)
 	return (ENXIO);
 }
 
-#if 0
-int
-rge_match(struct device *parent, void *match, void *aux)
+static int
+rge_attach(device_t dev)
 {
-	return (pci_matchbyid((struct pci_attach_args *)aux, rge_devices,
-	    nitems(rge_devices)));
-}
+	struct rge_softc *sc;
 
-void
-rge_attach(struct device *parent, struct device *self, void *aux)
-{
+	sc = device_get_softc(dev);
+	sc->sc_dev = dev;
+	sc->sc_ifp = if_gethandle(IFT_ETHER);
+	mtx_init(&sc->sc_mtx, device_get_nameunit(dev), MTX_NETWORK_LOCK,
+	    MTX_DEF);
+
+#if 0
 	struct rge_softc *sc = (struct rge_softc *)self;
 	struct pci_attach_args *pa = aux;
 	pci_chipset_tag_t pc = pa->pa_pc;
@@ -356,7 +354,24 @@ rge_attach(struct device *parent, struct device *self, void *aux)
 
 	if_attach(ifp);
 	ether_ifattach(ifp);
+#endif
+	return (0);
 }
+
+static int
+rge_detach(device_t dev)
+{
+	struct rge_softc *sc = device_get_softc(dev);
+
+	if (sc->sc_ifp)
+		if_free(sc->sc_ifp);
+
+	mtx_destroy(&sc->sc_mtx);
+
+	return (0);
+}
+
+#if 0
 
 int
 rge_activate(struct device *self, int act)
@@ -3463,9 +3478,9 @@ rge_wol_power(struct rge_softc *sc)
 
 static device_method_t rge_methods[] = {
 	DEVMETHOD(device_probe,			rge_probe),
-#if 0
 	DEVMETHOD(device_attach,		rge_attach),
 	DEVMETHOD(device_detach,		rge_detach),
+#if 0
 	DEVMETHOD(device_suspend,		rge_suspend),
 	DEVMETHOD(device_resume,		rge_resume),
 	DEVMETHOD(device_shutdown,		rge_shutdown),

@@ -394,7 +394,8 @@ enum rge_mac_type {
 
 struct rge_softc {
 	device_t		sc_dev;
-//	struct arpcom		sc_arpcom;	/* Ethernet common data */
+	if_t			sc_ifp;		/* Ethernet common data */
+	struct mtx		sc_mtx;
 	void			*sc_ih;		/* interrupt vectoring */
 	bus_space_handle_t	rge_bhandle;	/* bus space handle */
 	bus_space_tag_t		rge_btag;	/* bus space tag */

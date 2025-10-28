@@ -1421,7 +1421,7 @@ rge_allocmem(struct rge_softc *sc)
 {
 	struct rge_queues *q = sc->sc_queues;
 	int error;
-//	int i;
+	int i;
 
 	/* Allocate DMA'able memory for the TX ring. */
 	error = bus_dmamap_create(sc->sc_dmat, BUS_DMA_COHERENT,
@@ -1455,20 +1455,16 @@ rge_allocmem(struct rge_softc *sc)
 		goto error;
 	}
 
-#if 0
 	/* Create DMA maps for TX buffers. */
 	for (i = 0; i < RGE_TX_LIST_CNT; i++) {
-		error = bus_dmamap_create(sc->sc_dmat, RGE_JUMBO_FRAMELEN,
-		    RGE_TX_NSEGS, RGE_JUMBO_FRAMELEN, 0,
-		    BUS_DMA_NOWAIT | BUS_DMA_ALLOCNOW,
-		    &q->q_tx.rge_txq[i].txq_dmamap);
+		error = bus_dmamap_create(sc->sc_dmat_tx_buf,
+		    BUS_DMA_NOWAIT, &q->q_tx.rge_txq[i].txq_dmamap);
 		if (error) {
-			printf("%s: can't create DMA map for TX\n",
-			    sc->sc_dev.dv_xname);
-			return (error);
+			device_printf(sc->sc_dev,
+			    "can't create DMA map for TX (%d)\n", error);
+			goto error;
 		}
 	}
-#endif
 
 #if 0
 	/* Allocate DMA'able memory for the RX ring. */
@@ -1529,6 +1525,8 @@ rge_allocmem(struct rge_softc *sc)
 	return (0);
 error:
 
+	rge_freemem(sc);
+
 	return (error);
 }
 
@@ -1536,14 +1534,47 @@ static int
 rge_freemem(struct rge_softc *sc)
 {
 	struct rge_queues *q = sc->sc_queues;
+	int i;
 
 	/* TX desc */
-	bus_dmamap_unload(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map);
-	bus_dmamem_free(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list,
-	    q->q_tx.rge_tx_list_map);
-	memset(&q->q_tx, 0, sizeof(q->q_tx));
+	if (q->q_tx.rge_tx_list_map != 0) {
+		bus_dmamap_unload(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map);
+		bus_dmamem_free(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list,
+		    q->q_tx.rge_tx_list_map);
+		memset(&q->q_tx, 0, sizeof(q->q_tx));
+	}
 
 	/* TX buf */
+	for (i = 0; i < RGE_TX_LIST_CNT; i++) {
+		struct rge_txq *tx = &q->q_tx.rge_txq[i];
+
+		/* unmap/free mbuf if it's still alloc'ed and mapped */
+		if (tx->txq_mbuf != NULL) {
+			static bool do_warning = false;
+
+			if (do_warning == false) {
+				device_printf(sc->sc_dev,
+				    "%s: TX mbuf should've been freed!\n",
+				    __func__);
+				do_warning = true;
+			}
+			if (tx->txq_dmamap != NULL) {
+				bus_dmamap_sync(sc->sc_dmat_tx_buf,
+				    tx->txq_dmamap, BUS_DMASYNC_POSTREAD);
+				bus_dmamap_unload(sc->sc_dmat_tx_buf,
+				    tx->txq_dmamap);
+			}
+			m_free(tx->txq_mbuf);
+			tx->txq_mbuf = NULL;
+		}
+
+		/* Destroy the dmamap if it's allocated */
+		if (tx->txq_dmamap != NULL) {
+			bus_dmamap_destroy(sc->sc_dmat_tx_buf, tx->txq_dmamap);
+			tx->txq_dmamap = NULL;
+		}
+	}
+
 	/* RX desc */
 	/* RX buf */
 	device_printf(sc->sc_dev, "%s: TODO: free DMA TX buf!\n", __func__);

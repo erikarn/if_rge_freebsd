@@ -1413,8 +1413,10 @@ rge_dma_load_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 	*paddr = segs[0];
 }
 
-/*
- * Allocate memory for RX/TX rings.
+/**
+ * @brief Allocate memory for RX/TX rings.
+ *
+ * Called with the driver lock NOT held.
  */
 static int
 rge_allocmem(struct rge_softc *sc)
@@ -1422,6 +1424,8 @@ rge_allocmem(struct rge_softc *sc)
 	struct rge_queues *q = sc->sc_queues;
 	int error;
 	int i;
+
+	RGE_ASSERT_UNLOCKED(sc);
 
 	/* Allocate DMA'able memory for the TX ring. */
 	error = bus_dmamap_create(sc->sc_dmat, BUS_DMA_COHERENT,
@@ -1466,61 +1470,50 @@ rge_allocmem(struct rge_softc *sc)
 		}
 	}
 
-#if 0
 	/* Allocate DMA'able memory for the RX ring. */
-	error = bus_dmamap_create(sc->sc_dmat, RGE_RX_LIST_SZ, 1,
-	    RGE_RX_LIST_SZ, 0, BUS_DMA_NOWAIT | BUS_DMA_ALLOCNOW,
+	error = bus_dmamap_create(sc->sc_dmat, BUS_DMA_COHERENT,
 	    &q->q_rx.rge_rx_list_map);
 	if (error) {
-		printf("%s: can't create RX list map\n", sc->sc_dev.dv_xname);
-		return (error);
+		device_printf(sc->sc_dev,
+		    "%s: error (create rx_list.map) (%d)\n", __func__, error);
+		goto error;
 	}
-	error = bus_dmamem_alloc(sc->sc_dmat, RGE_RX_LIST_SZ, RGE_ALIGN, 0,
-	    &q->q_rx.rge_rx_listseg, 1, &q->q_rx.rge_rx_listnseg,
-	    BUS_DMA_NOWAIT| BUS_DMA_ZERO);
+	error = bus_dmamem_alloc(sc->sc_dmat_rx_desc,
+	    (void **) &q->q_rx.rge_rx_list,
+	    BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT,
+	    &q->q_rx.rge_rx_list_map);
 	if (error) {
-		printf("%s: can't alloc RX list\n", sc->sc_dev.dv_xname);
-		return (error);
+		device_printf(sc->sc_dev,
+		    "%s: error (alloc rx_list.map) (%d)\n",
+		    __func__, error);
+		goto error;
 	}
-#endif
 
-#if 0
 	/* Load the map for the RX ring. */
-	error = bus_dmamem_map(sc->sc_dmat, &q->q_rx.rge_rx_listseg,
-	    q->q_rx.rge_rx_listnseg, RGE_RX_LIST_SZ,
-	    (caddr_t *)&q->q_rx.rge_rx_list, BUS_DMA_NOWAIT | BUS_DMA_COHERENT);
-	if (error) {
-		printf("%s: can't map RX dma buffers\n", sc->sc_dev.dv_xname);
-		bus_dmamem_free(sc->sc_dmat, &q->q_rx.rge_rx_listseg,
-		    q->q_rx.rge_rx_listnseg);
-		return (error);
-	}
-	error = bus_dmamap_load(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-	    q->q_rx.rge_rx_list, RGE_RX_LIST_SZ, NULL, BUS_DMA_NOWAIT);
-	if (error) {
-		printf("%s: can't load RX dma map\n", sc->sc_dev.dv_xname);
-		bus_dmamap_destroy(sc->sc_dmat, q->q_rx.rge_rx_list_map);
-		bus_dmamem_unmap(sc->sc_dmat,
-		    (caddr_t)q->q_rx.rge_rx_list, RGE_RX_LIST_SZ);
-		bus_dmamem_free(sc->sc_dmat, &q->q_rx.rge_rx_listseg,
-		    q->q_rx.rge_rx_listnseg);
-		return (error);
-	}
-#endif
+	error = bus_dmamap_load(sc->sc_dmat_rx_desc,
+	    q->q_rx.rge_rx_list_map,
+	    &q->q_rx.rge_rx_list,
+	    RGE_RX_LIST_SZ,
+	    rge_dma_load_cb,
+	    (void *) &q->q_rx.rge_rx_listseg,
+	    BUS_DMA_NOWAIT);
 
-#if 0
+	if (error) {
+		device_printf(sc->sc_dev, "%s: error (load rx_list.map) (%d)\n",
+		    __func__, error);
+		goto error;
+	}
+
 	/* Create DMA maps for RX buffers. */
 	for (i = 0; i < RGE_RX_LIST_CNT; i++) {
-		error = bus_dmamap_create(sc->sc_dmat, RGE_JUMBO_FRAMELEN, 1,
-		    RGE_JUMBO_FRAMELEN, 0, BUS_DMA_NOWAIT | BUS_DMA_ALLOCNOW,
-		    &q->q_rx.rge_rxq[i].rxq_dmamap);
+		error = bus_dmamap_create(sc->sc_dmat_rx_buf,
+		    BUS_DMA_NOWAIT, &q->q_rx.rge_rxq[i].rxq_dmamap);
 		if (error) {
-			printf("%s: can't create DMA map for RX\n",
-			    sc->sc_dev.dv_xname);
-			return (error);
+			device_printf(sc->sc_dev,
+			    "can't create DMA map for RX (%d)\n", error);
+			goto error;
 		}
 	}
-#endif
 
 	return (0);
 error:
@@ -1530,11 +1523,18 @@ error:
 	return (error);
 }
 
+/**
+ * @brief Free the TX/RX DMA buffers and mbufs.
+ *
+ * Called with the driver lock NOT held.
+ */
 static int
 rge_freemem(struct rge_softc *sc)
 {
 	struct rge_queues *q = sc->sc_queues;
 	int i;
+
+	RGE_ASSERT_UNLOCKED(sc);
 
 	/* TX desc */
 	if (q->q_tx.rge_tx_list_map != 0) {
@@ -1576,10 +1576,35 @@ rge_freemem(struct rge_softc *sc)
 	}
 
 	/* RX desc */
+	if (q->q_rx.rge_rx_list_map != 0) {
+		bus_dmamap_unload(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map);
+		bus_dmamem_free(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list,
+		    q->q_rx.rge_rx_list_map);
+		memset(&q->q_rx, 0, sizeof(q->q_tx));
+	}
+
 	/* RX buf */
-	device_printf(sc->sc_dev, "%s: TODO: free DMA TX buf!\n", __func__);
-	device_printf(sc->sc_dev, "%s: TODO: free DMA RX desc!\n", __func__);
-	device_printf(sc->sc_dev, "%s: TODO: free DMA RX buf!\n", __func__);
+	for (i = 0; i < RGE_RX_LIST_CNT; i++) {
+		struct rge_rxq *rx = &q->q_rx.rge_rxq[i];
+
+		/* unmap/free mbuf if it's still alloc'ed and mapped */
+		if (rx->rxq_mbuf != NULL) {
+			if (rx->rxq_dmamap != NULL) {
+				bus_dmamap_sync(sc->sc_dmat_rx_buf,
+				    rx->rxq_dmamap, BUS_DMASYNC_POSTREAD);
+				bus_dmamap_unload(sc->sc_dmat_rx_buf,
+				    rx->rxq_dmamap);
+			}
+			m_free(rx->rxq_mbuf);
+			rx->rxq_mbuf = NULL;
+		}
+
+		/* Destroy the dmamap if it's allocated */
+		if (rx->rxq_dmamap != NULL) {
+			bus_dmamap_destroy(sc->sc_dmat_rx_buf, rx->rxq_dmamap);
+			rx->rxq_dmamap = NULL;
+		}
+	}
 
 	return (0);
 }

@@ -350,7 +350,7 @@ struct rge_rx {
 
 //	struct if_rxring	rge_rx_ring;
 	bus_dma_segment_t	rge_rx_listseg;
-	int			rge_rx_listnseg;
+//	int			rge_rx_listnseg;
 	bus_dmamap_t		rge_rx_list_map;
 	struct rge_rx_desc	*rge_rx_list;
 

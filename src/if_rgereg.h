@@ -423,7 +423,7 @@ struct rge_softc {
 
 	struct task		sc_task;
 
-//	struct timeout		sc_timeout;	/* tick timeout */
+	struct callout		sc_timeout;	/* 1 second tick */
 
 	uint64_t		rge_mcodever;
 	uint16_t		rge_rcodever;

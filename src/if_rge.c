@@ -146,8 +146,10 @@ static uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
 static int		rge_get_link_status(struct rge_softc *);
 #if 0
 void		rge_txstart(void *);
-void		rge_tick(void *);
-void		rge_link_state(struct rge_softc *);
+#endif
+static void	rge_tick(void *);
+static void	rge_link_state(struct rge_softc *);
+#if 0
 #ifndef SMALL_KERNEL
 int		rge_wol(struct ifnet *, int);
 void		rge_wol_power(struct rge_softc *);
@@ -532,9 +534,9 @@ rge_attach(device_t dev)
 #endif
 
 #if 0
-	timeout_set(&sc->sc_timeout, rge_tick, sc);
 	task_set(&sc->sc_task, rge_txstart, sc);
 #endif
+	callout_init_mtx(&sc->sc_timeout, &sc->sc_mtx, 0);
 
 #if 0
 	/* Initialize ifmedia structures. */
@@ -560,6 +562,15 @@ static int
 rge_detach(device_t dev)
 {
 	struct rge_softc *sc = device_get_softc(dev);
+
+	/* TODO: global flag, detaching */
+
+	/* TODO: stop/drain network interface */
+	callout_drain(&sc->sc_timeout);
+
+	RGE_LOCK(sc);
+	callout_stop(&sc->sc_timeout);
+	RGE_UNLOCK(sc);
 
 	/* TODO: stop DMA */
 
@@ -3806,35 +3817,44 @@ rge_txstart(void *arg)
 
 	RGE_WRITE_2(sc, RGE_TXSTART, RGE_TXSTART_START);
 }
+#endif
 
+/**
+ * @brief Called by the sc_timeout callout.
+ *
+ * This is called by the callout code with the driver lock held.
+ */
 void
 rge_tick(void *arg)
 {
 	struct rge_softc *sc = arg;
-	int s;
 
-	s = splnet();
+	RGE_ASSERT_LOCKED(sc);
+
 	rge_link_state(sc);
-	splx(s);
-
-	timeout_add_sec(&sc->sc_timeout, 1);
+	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);
 }
 
+/**
+ * @brief process a link state change.
+ *
+ * Must be called with the driver lock held.
+ */
 void
 rge_link_state(struct rge_softc *sc)
 {
-	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	int link = LINK_STATE_DOWN;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	if (rge_get_link_status(sc))
 		link = LINK_STATE_UP;
 
-	if (ifp->if_link_state != link) {
-		ifp->if_link_state = link;
-		if_link_state_change(ifp);
-	}
+	if (if_getlinkstate(sc->sc_ifp) != link)
+		if_link_state_change(sc->sc_ifp, link);
 }
 
+#if 0
 #ifndef SMALL_KERNEL
 int
 rge_wol(struct ifnet *ifp, int enable)

@@ -82,8 +82,8 @@ static int	rge_ioctl_if(if_t, u_long, caddr_t);
 static void	rge_init_if(void *);
 #if 0
 void		rge_init(struct ifnet *);
-void		rge_stop(struct ifnet *);
 #endif
+static void	rge_stop_locked(struct rge_softc *);
 static int		rge_ifmedia_upd(if_t);
 static void		rge_ifmedia_sts(if_t, struct ifmediareq *);
 static int		rge_allocmem(struct rge_softc *);
@@ -570,17 +570,20 @@ rge_detach(device_t dev)
 
 	RGE_LOCK(sc);
 	callout_stop(&sc->sc_timeout);
-	RGE_UNLOCK(sc);
+
+	/* TODO: stop NIC */
+	rge_stop_locked(sc);
 
 	/* TODO: stop DMA */
 
-	/* TODO: stop NIC */
 
 	/* TODO: wait for completion */
 
 	/* TODO: free pending TX mbufs */
 
 	/* TODO: free RX mbuf ring */
+
+	RGE_UNLOCK(sc);
 
 	/* Free descriptor memory */
 	device_printf(sc->sc_dev, "%s: freemem\n", __func__);
@@ -1231,21 +1234,26 @@ rge_init(struct ifnet *ifp)
 
 	timeout_add_sec(&sc->sc_timeout, 1);
 }
+#endif
 
 /*
- * Stop the adapter and free any mbufs allocated to the RX and TX lists.
+ * @brief Stop the adapter and free any mbufs allocated to the RX and TX lists.
+ *
+ * Must be called with the driver lock held.
  */
 void
-rge_stop(struct ifnet *ifp)
+rge_stop_locked(struct rge_softc *sc)
 {
-	struct rge_softc *sc = ifp->if_softc;
 	struct rge_queues *q = sc->sc_queues;
 	int i;
 
-	timeout_del(&sc->sc_timeout);
+	callout_stop(&sc->sc_timeout);
 
+#if 0
 	ifp->if_timer = 0;
 	ifp->if_flags &= ~IFF_RUNNING;
+#endif
+	if_setdrvflagbits(sc->sc_ifp, 0, IFF_DRV_RUNNING);
 	sc->rge_timerintr = 0;
 
 	RGE_CLRBIT_4(sc, RGE_RXCFG, RGE_RXCFG_ALLPHYS | RGE_RXCFG_INDIV |
@@ -1256,9 +1264,11 @@ rge_stop(struct ifnet *ifp)
 
 	RGE_MAC_CLRBIT(sc, 0xc0ac, 0x1f80);
 
+#if 0
 	intr_barrier(sc->sc_ih);
 	ifq_barrier(&ifp->if_snd);
-	ifq_clr_oactive(&ifp->if_snd);
+#endif
+	if_setdrvflagbits(sc->sc_ifp, 0, IFF_DRV_OACTIVE);
 
 	if (q->q_rx.rge_head != NULL) {
 		m_freem(q->q_rx.rge_head);
@@ -1286,7 +1296,6 @@ rge_stop(struct ifnet *ifp)
 		}
 	}
 }
-#endif
 
 /*
  * Set media options.

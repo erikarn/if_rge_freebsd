@@ -1632,9 +1632,14 @@ rge_freemem(struct rge_softc *sc)
 #if 0
 /*
  * Initialize the RX descriptor and attach an mbuf cluster.
+ *
+ * Note: this relies on the rxr ring buffer abstraction to not
+ * over-fill the RX ring.  For FreeBSD we'll need to use the
+ * prod/cons RX indexes to know how much RX ring space to
+ * populate.
  */
 int
-rge_newbuf(struct rge_queues *q)
+rge_newbuf_locked(struct rge_queues *q)
 {
 	struct rge_softc *sc = q->q_sc;
 	struct mbuf *m;
@@ -1644,6 +1649,15 @@ rge_newbuf(struct rge_queues *q)
 	uint32_t cmdsts;
 	int idx;
 
+	RGE_ASSERT_LOCKED(sc);
+
+	/*
+	 * TODO: Verify we have enough space in the ring; error out
+	 * if we do not.
+	 */
+
+
+	/* Allocate single buffer backed mbuf of MCLBYTES */
 	m = MCLGETL(NULL, M_DONTWAIT, MCLBYTES);
 	if (m == NULL)
 		return (ENOBUFS);

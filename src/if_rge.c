@@ -2032,21 +2032,38 @@ rge_reset(struct rge_softc *sc)
 	return 0;
 }
 
-#if 0
-void
-rge_iff(struct rge_softc *sc)
+static u_int
+rge_hash_maddr(void *arg, struct sockaddr_dl *sdl, u_int cnt)
 {
-	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
-	struct arpcom *ac = &sc->sc_arpcom;
-	struct ether_multi *enm;
-	struct ether_multistep step;
+	uint32_t crc, *hashes = arg;
+
+	// XXX TODO: validate this does addrlo? */
+	crc = ether_crc32_be(LLADDR(sdl), ETHER_ADDR_LEN) >> 26;
+	crc &= 0x3f;
+
+	if (crc < 32)
+		hashes[0] |= (1 << crc);
+	else
+		hashes[1] |= (1 << (crc - 32));
+
+	return (1);
+}
+
+/**
+ * @brief Configure the RX filter and multicast filter.
+ *
+ * This must be called with the driver lock held.
+ */
+static void
+rge_iff_locked(struct rge_softc *sc)
+{
 	uint32_t hashes[2];
 	uint32_t rxfilt;
-	int h = 0;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	rxfilt = RGE_READ_4(sc, RGE_RXCFG);
 	rxfilt &= ~(RGE_RXCFG_ALLPHYS | RGE_RXCFG_MULTI);
-	ifp->if_flags &= ~IFF_ALLMULTI;
 
 	/*
 	 * Always accept frames destined to our station address.
@@ -2054,36 +2071,22 @@ rge_iff(struct rge_softc *sc)
 	 */
 	rxfilt |= RGE_RXCFG_INDIV | RGE_RXCFG_BROAD;
 
-	if (ifp->if_flags & IFF_PROMISC || ac->ac_multirangecnt > 0) {
-		ifp->if_flags |= IFF_ALLMULTI;
+	if ((if_getflags(sc->sc_ifp) & (IFF_PROMISC | IFF_ALLMULTI)) != 0) {
 		rxfilt |= RGE_RXCFG_MULTI;
-		if (ifp->if_flags & IFF_PROMISC)
+		if ((if_getflags(sc->sc_ifp) & IFF_PROMISC) != 0)
 			rxfilt |= RGE_RXCFG_ALLPHYS;
 		hashes[0] = hashes[1] = 0xffffffff;
 	} else {
 		rxfilt |= RGE_RXCFG_MULTI;
 		/* Program new filter. */
 		memset(hashes, 0, sizeof(hashes));
-
-		ETHER_FIRST_MULTI(step, ac, enm);
-		while (enm != NULL) {
-			h = ether_crc32_be(enm->enm_addrlo,
-			    ETHER_ADDR_LEN) >> 26;
-
-			if (h < 32)
-				hashes[0] |= (1 << h);
-			else
-				hashes[1] |= (1 << (h - 32));
-
-			ETHER_NEXT_MULTI(step, enm);
-		}
+		if_foreach_llmaddr(sc->sc_ifp, rge_hash_maddr, &hashes);
 	}
 
 	RGE_WRITE_4(sc, RGE_RXCFG, rxfilt);
-	RGE_WRITE_4(sc, RGE_MAR0, swap32(hashes[1]));
-	RGE_WRITE_4(sc, RGE_MAR4, swap32(hashes[0]));
+	RGE_WRITE_4(sc, RGE_MAR0, bswap32(hashes[1]));
+	RGE_WRITE_4(sc, RGE_MAR4, bswap32(hashes[0]));
 }
-#endif
 
 /**
  * @brief Do initial chip power-on and setup.

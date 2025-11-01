@@ -1021,9 +1021,7 @@ rge_init(struct ifnet *ifp)
 
 	/* Initialize RX and TX descriptors lists. */
 	rge_rx_list_init(q);
-#if 0
 	rge_tx_list_init(q);
-#endif
 
 	if (rge_chipinit(sc))
 		return;

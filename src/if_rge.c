@@ -90,9 +90,7 @@ static int		rge_allocmem(struct rge_softc *);
 static int		rge_freemem(struct rge_softc *);
 static int		rge_newbuf(struct rge_queues *);
 static void	rge_rx_list_init(struct rge_queues *);
-#if 0
-void		rge_tx_list_init(struct rge_queues *);
-#endif
+static void	rge_tx_list_init(struct rge_queues *);
 static void	rge_fill_rx_ring(struct rge_queues *);
 #if 0
 int		rge_rxeof(struct rge_queues *);
@@ -1745,13 +1743,14 @@ rge_fill_rx_ring(struct rge_queues *q)
 	}
 }
 
-#if 0
-void
+static void
 rge_tx_list_init(struct rge_queues *q)
 {
 	struct rge_softc *sc = q->q_sc;
 	struct rge_tx_desc *d;
 	int i;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	memset(q->q_tx.rge_tx_list, 0, RGE_TX_LIST_SZ);
 
@@ -1761,13 +1760,13 @@ rge_tx_list_init(struct rge_queues *q)
 	d = &q->q_tx.rge_tx_list[RGE_TX_LIST_CNT - 1];
 	d->rge_cmdsts = htole32(RGE_TDCMDSTS_EOR);
 
-	bus_dmamap_sync(sc->sc_dmat, q->q_tx.rge_tx_list_map, 0,
-	    q->q_tx.rge_tx_list_map->dm_mapsize,
+	bus_dmamap_sync(sc->sc_dmat, q->q_tx.rge_tx_list_map,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	q->q_tx.rge_txq_prodidx = q->q_tx.rge_txq_considx = 0;
 }
 
+#if 0
 int
 rge_rxeof(struct rge_queues *q)
 {

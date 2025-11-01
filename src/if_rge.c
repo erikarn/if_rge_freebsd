@@ -88,11 +88,13 @@ static int		rge_ifmedia_upd(if_t);
 static void		rge_ifmedia_sts(if_t, struct ifmediareq *);
 static int		rge_allocmem(struct rge_softc *);
 static int		rge_freemem(struct rge_softc *);
+static int		rge_newbuf(struct rge_queues *);
+static void	rge_rx_list_init(struct rge_queues *);
 #if 0
-int		rge_newbuf(struct rge_queues *);
-void		rge_rx_list_init(struct rge_queues *);
 void		rge_tx_list_init(struct rge_queues *);
-void		rge_fill_rx_ring(struct rge_queues *);
+#endif
+static void	rge_fill_rx_ring(struct rge_queues *);
+#if 0
 int		rge_rxeof(struct rge_queues *);
 int		rge_txeof(struct rge_queues *);
 #endif
@@ -1007,6 +1009,11 @@ rge_init(struct ifnet *ifp)
 	uint32_t rxconf, val;
 	int i, num_miti;
 
+	/*
+	 * XXX TODO: calling stop before start feels hacky?
+	 * Does if_re / if_rl do it?  I'd rather track driver start
+	 * and stop state, and make sure I explicitly call them?
+	 */
 	rge_stop(ifp);
 
 	/* Set MAC address. */
@@ -1014,7 +1021,9 @@ rge_init(struct ifnet *ifp)
 
 	/* Initialize RX and TX descriptors lists. */
 	rge_rx_list_init(q);
+#if 0
 	rge_tx_list_init(q);
+#endif
 
 	if (rge_chipinit(sc))
 		return;
@@ -1424,6 +1433,9 @@ rge_ifmedia_sts(if_t ifp, struct ifmediareq *ifmr)
 	}
 }
 
+/**
+ * @brief callback to load/populate a single physical address
+ */
 static void
 rge_dma_load_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 {
@@ -1629,7 +1641,6 @@ rge_freemem(struct rge_softc *sc)
 	return (0);
 }
 
-#if 0
 /*
  * Initialize the RX descriptor and attach an mbuf cluster.
  *
@@ -1637,17 +1648,20 @@ rge_freemem(struct rge_softc *sc)
  * over-fill the RX ring.  For FreeBSD we'll need to use the
  * prod/cons RX indexes to know how much RX ring space to
  * populate.
+ *
+ * This must be called with the driver lock held.
  */
-int
-rge_newbuf_locked(struct rge_queues *q)
+static int
+rge_newbuf(struct rge_queues *q)
 {
 	struct rge_softc *sc = q->q_sc;
 	struct mbuf *m;
 	struct rge_rx_desc *r;
 	struct rge_rxq *rxq;
 	bus_dmamap_t rxmap;
+	bus_dma_segment_t seg[1];
 	uint32_t cmdsts;
-	int idx;
+	int idx, nsegs;
 
 	RGE_ASSERT_LOCKED(sc);
 
@@ -1658,7 +1672,7 @@ rge_newbuf_locked(struct rge_queues *q)
 
 
 	/* Allocate single buffer backed mbuf of MCLBYTES */
-	m = MCLGETL(NULL, M_DONTWAIT, MCLBYTES);
+	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
 	if (m == NULL)
 		return (ENOBUFS);
 
@@ -1669,38 +1683,36 @@ rge_newbuf_locked(struct rge_queues *q)
 	rxq = &q->q_rx.rge_rxq[idx];
 	rxmap = rxq->rxq_dmamap;
 
-	if (bus_dmamap_load_mbuf(sc->sc_dmat, rxmap, m, BUS_DMA_NOWAIT)) {
+	nsegs = 1;
+	if (bus_dmamap_load_mbuf_sg(sc->sc_dmat, rxmap, m, seg, &nsegs,
+	    BUS_DMA_NOWAIT)) {
 		m_freem(m);
 		return (ENOBUFS);
 	}
 
-	bus_dmamap_sync(sc->sc_dmat, rxmap, 0, rxmap->dm_mapsize,
-	    BUS_DMASYNC_PREREAD);
+	bus_dmamap_sync(sc->sc_dmat, rxmap, BUS_DMASYNC_PREREAD);
 
 	/* Map the segments into RX descriptors. */
 	r = &q->q_rx.rge_rx_list[idx];
 
 	rxq->rxq_mbuf = m;
 
-	cmdsts = rxmap->dm_segs[0].ds_len;
+	cmdsts = seg[0].ds_len;
 	if (idx == RGE_RX_LIST_CNT - 1)
 		cmdsts |= RGE_RDCMDSTS_EOR;
 
 	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(cmdsts);
 	r->hi_qword1.rx_qword4.rge_extsts = htole32(0);
-	r->hi_qword0.rge_addr = htole64(rxmap->dm_segs[0].ds_addr);
+	r->hi_qword0.rge_addr = htole64(seg[0].ds_addr);
 
 	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-	    idx * sizeof(struct rge_rx_desc), sizeof(struct rge_rx_desc),
 	    BUS_DMASYNC_PREWRITE);
 
 	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-	    idx * sizeof(struct rge_rx_desc), sizeof(struct rge_rx_desc),
 	    BUS_DMASYNC_POSTWRITE);
 	cmdsts |= RGE_RDCMDSTS_OWN;
 	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(cmdsts);
 	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-	    idx * sizeof(struct rge_rx_desc), sizeof(struct rge_rx_desc),
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	q->q_rx.rge_rxq_prodidx = RGE_NEXT_RX_DESC(idx);
@@ -1708,32 +1720,34 @@ rge_newbuf_locked(struct rge_queues *q)
 	return (0);
 }
 
-void
+static void
 rge_rx_list_init(struct rge_queues *q)
 {
 	memset(q->q_rx.rge_rx_list, 0, RGE_RX_LIST_SZ);
+
+	RGE_ASSERT_LOCKED(sc);
 
 	q->q_rx.rge_rxq_prodidx = q->q_rx.rge_rxq_considx = 0;
 	q->q_rx.rge_head = NULL;
 	q->q_rx.rge_tail = &q->q_rx.rge_head;
 
-	if_rxr_init(&q->q_rx.rge_rx_ring, 32, RGE_RX_LIST_CNT - 1);
 	rge_fill_rx_ring(q);
 }
 
-void
+static void
 rge_fill_rx_ring(struct rge_queues *q)
 {
-	struct if_rxring *rxr = &q->q_rx.rge_rx_ring;
-	int slots;
+	int i;
 
-	for (slots = if_rxr_get(rxr, RGE_RX_LIST_CNT); slots > 0; slots--) {
+	RGE_ASSERT_LOCKED(sc);
+
+	for (i = 0; i < RGE_RX_LIST_CNT; i++) {
 		if (rge_newbuf(q))
 			break;
 	}
-	if_rxr_put(rxr, slots);
 }
 
+#if 0
 void
 rge_tx_list_init(struct rge_queues *q)
 {

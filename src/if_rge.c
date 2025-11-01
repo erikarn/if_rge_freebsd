@@ -645,25 +645,27 @@ rge_activate(struct device *self, int act)
 	}
 	return (0);
 }
+#endif
 
-int
+static void
 rge_intr(void *arg)
 {
 	struct rge_softc *sc = arg;
 	struct rge_queues *q = sc->sc_queues;
-	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	uint32_t status;
 	int claimed = 0, rv;
 
-	if (!(ifp->if_flags & IFF_RUNNING))
-		return (0);
+	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) == 0)
+		return;
+
+	RGE_LOCK(sc);
 
 	/* Disable interrupts. */
 	RGE_WRITE_4(sc, RGE_IMR, 0);
 
 	if (!(sc->rge_flags & RGE_FLAG_MSI)) {
 		if ((RGE_READ_4(sc, RGE_ISR) & sc->rge_intrs) == 0)
-			return (0);
+			goto done;
 	}
 
 	status = RGE_READ_4(sc, RGE_ISR);
@@ -675,13 +677,16 @@ rge_intr(void *arg)
 
 	rv = 0;
 	if (status & sc->rge_intrs) {
+
+		(void) q;
+#if 0
 		rv |= rge_rxeof(q);
 		rv |= rge_txeof(q);
+#endif
 
 		if (status & RGE_ISR_SYSTEM_ERR) {
-			KERNEL_LOCK();
-			rge_init(ifp);
-			KERNEL_UNLOCK();
+			/* XXX TODO: error log? count? */
+			rge_init_locked(sc);
 		}
 		claimed = 1;
 	}
@@ -699,8 +704,10 @@ rge_intr(void *arg)
 			 * race introduced by changing interrupt
 			 * masks.
 			 */
+#if 0
 			rge_rxeof(q);
 			rge_txeof(q);
+#endif
 		} else
 			RGE_WRITE_4(sc, RGE_TIMERCNT, 1);
 	} else if (rv) {
@@ -714,9 +721,12 @@ rge_intr(void *arg)
 
 	RGE_WRITE_4(sc, RGE_IMR, sc->rge_intrs);
 
-	return (claimed);
+done:
+	RGE_UNLOCK(sc);
+	(void) claimed;
 }
 
+#if 0
 static inline void
 rge_tx_list_sync(struct rge_softc *sc, struct rge_queues *q,
     unsigned int idx, unsigned int len, int ops)

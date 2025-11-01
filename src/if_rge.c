@@ -80,9 +80,7 @@ static int	rge_transmit_if(if_t, struct mbuf *);
 static void	rge_qflush_if(if_t);
 static int	rge_ioctl_if(if_t, u_long, caddr_t);
 static void	rge_init_if(void *);
-#if 0
-void		rge_init(struct ifnet *);
-#endif
+static void	rge_init_locked(struct rge_softc *);
 static void	rge_stop_locked(struct rge_softc *);
 static int		rge_ifmedia_upd(if_t);
 static void		rge_ifmedia_sts(if_t, struct ifmediareq *);
@@ -97,9 +95,7 @@ int		rge_rxeof(struct rge_queues *);
 int		rge_txeof(struct rge_queues *);
 #endif
 static int		rge_reset(struct rge_softc *);
-#if 0
-void		rge_iff(struct rge_softc *);
-#endif
+static void		rge_iff_locked(struct rge_softc *);
 static int		rge_chipinit(struct rge_softc *);
 static void		rge_set_phy_power(struct rge_softc *, int);
 static void		rge_ephy_config(struct rge_softc *);
@@ -995,27 +991,29 @@ rge_init_if(void *xsc)
 {
 	struct rge_softc *sc = xsc;
 
-	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+	RGE_LOCK(sc);
+	rge_init_locked(sc);
+	RGE_UNLOCK(sc);
 }
 
-#if 0
-void
-rge_init(struct ifnet *ifp)
+static void
+rge_init_locked(struct rge_softc *sc)
 {
-	struct rge_softc *sc = ifp->if_softc;
 	struct rge_queues *q = sc->sc_queues;
 	uint32_t rxconf, val;
 	int i, num_miti;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	/*
 	 * XXX TODO: calling stop before start feels hacky?
 	 * Does if_re / if_rl do it?  I'd rather track driver start
 	 * and stop state, and make sure I explicitly call them?
 	 */
-	rge_stop(ifp);
+	rge_stop_locked(sc);
 
 	/* Set MAC address. */
-	rge_set_macaddr(sc, sc->sc_arpcom.ac_enaddr);
+	rge_set_macaddr(sc, if_getlladdr(sc->sc_ifp));
 
 	/* Initialize RX and TX descriptors lists. */
 	rge_rx_list_init(q);
@@ -1036,13 +1034,13 @@ rge_init(struct ifnet *ifp)
 
 	/* Load the addresses of the RX and TX lists into the chip. */
 	RGE_WRITE_4(sc, RGE_RXDESC_ADDR_LO,
-	    RGE_ADDR_LO(q->q_rx.rge_rx_list_map->dm_segs[0].ds_addr));
+	    RGE_ADDR_LO(q->q_rx.rge_rx_listseg.ds_addr));
 	RGE_WRITE_4(sc, RGE_RXDESC_ADDR_HI,
-	    RGE_ADDR_HI(q->q_rx.rge_rx_list_map->dm_segs[0].ds_addr));
+	    RGE_ADDR_HI(q->q_rx.rge_rx_listseg.ds_addr));
 	RGE_WRITE_4(sc, RGE_TXDESC_ADDR_LO,
-	    RGE_ADDR_LO(q->q_tx.rge_tx_list_map->dm_segs[0].ds_addr));
+	    RGE_ADDR_LO(q->q_tx.rge_tx_listseg.ds_addr));
 	RGE_WRITE_4(sc, RGE_TXDESC_ADDR_HI,
-	    RGE_ADDR_HI(q->q_tx.rge_tx_list_map->dm_segs[0].ds_addr));
+	    RGE_ADDR_HI(q->q_tx.rge_tx_listseg.ds_addr));
 
 	/* Set the initial RX and TX configurations. */
 	if (sc->rge_type == MAC_R25)
@@ -1202,7 +1200,7 @@ rge_init(struct ifnet *ifp)
 	} else
 		RGE_MAC_CLRBIT(sc, 0xe092, 0x00ff);
 
-	if (ifp->if_capabilities & IFCAP_VLAN_HWTAGGING)
+	if (if_getcapabilities(sc->sc_ifp) & IFCAP_VLAN_HWTAGGING)
 		RGE_SETBIT_4(sc, RGE_RXCFG, RGE_RXCFG_VLANSTRIP);
 
 	RGE_SETBIT_2(sc, RGE_CPLUSCMD, RGE_CPLUSCMD_RXCSUM);
@@ -1216,7 +1214,7 @@ rge_init(struct ifnet *ifp)
 	DELAY(2000);
 
 	/* Program promiscuous mode and multicast filters. */
-	rge_iff(sc);
+	rge_iff_locked(sc);
 
 	if (sc->rge_type == MAC_R27)
 		RGE_CLRBIT_1(sc, RGE_RADMFIFO_PROTECT, 0x2001);
@@ -1226,7 +1224,7 @@ rge_init(struct ifnet *ifp)
 	RGE_CLRBIT_1(sc, RGE_EECMD, RGE_EECMD_WRITECFG);
 	DELAY(10);
 
-	rge_ifmedia_upd(ifp);
+	rge_ifmedia_upd(sc->sc_ifp);
 
 	/* Enable transmit and receive. */
 	RGE_WRITE_1(sc, RGE_CMD, RGE_CMD_TXENB | RGE_CMD_RXENB);
@@ -1234,12 +1232,11 @@ rge_init(struct ifnet *ifp)
 	/* Enable interrupts. */
 	rge_setup_intr(sc, RGE_IMTYPE_SIM);
 
-	ifp->if_flags |= IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
+	if_setdrvflagbits(sc->sc_ifp, IFF_DRV_RUNNING, 0);
+	if_setdrvflagbits(sc->sc_ifp, 0, IFF_DRV_OACTIVE);
 
-	timeout_add_sec(&sc->sc_timeout, 1);
+	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);
 }
-#endif
 
 /*
  * @brief Stop the adapter and free any mbufs allocated to the RX and TX lists.

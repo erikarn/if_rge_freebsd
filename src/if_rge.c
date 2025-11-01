@@ -72,13 +72,14 @@ static int		rge_detach(device_t);
 #if 0
 int		rge_activate(struct device *, int);
 int		rge_intr(void *);
-int		rge_ioctl(struct ifnet *, u_long, caddr_t);
+#endif
+static int	rge_ioctl(struct ifnet *, u_long, caddr_t);
+#if 0
 void		rge_start(struct ifqueue *);
 void		rge_watchdog(struct ifnet *);
 #endif
 static int	rge_transmit_if(if_t, struct mbuf *);
 static void	rge_qflush_if(if_t);
-static int	rge_ioctl_if(if_t, u_long, caddr_t);
 static void	rge_init_if(void *);
 static void	rge_init_locked(struct rge_softc *);
 static void	rge_stop_locked(struct rge_softc *);
@@ -207,7 +208,7 @@ rge_attach_if(struct rge_softc *sc, const char *eaddr)
 	if_setinitfn(sc->sc_ifp, rge_init_if);
 	if_setsoftc(sc->sc_ifp, sc);
 	if_setflags(sc->sc_ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
-	if_setioctlfn(sc->sc_ifp, rge_ioctl_if);
+	if_setioctlfn(sc->sc_ifp, rge_ioctl);
 	if_settransmitfn(sc->sc_ifp, rge_transmit_if);
 	if_setqflushfn(sc->sc_ifp, rge_qflush_if);
 	if_setcapabilities(sc->sc_ifp, 0);
@@ -849,55 +850,56 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 
 	return (txmap->dm_nsegs);
 }
+#endif
 
-int
+static int
 rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 {
-	struct rge_softc *sc = ifp->if_softc;
+	struct rge_softc *sc = if_getsoftc(ifp);
 	struct ifreq *ifr = (struct ifreq *)data;
-	int s, error = 0;
-
-	s = splnet();
+	int error = 0;
 
 	switch (cmd) {
-	case SIOCSIFADDR:
-		ifp->if_flags |= IFF_UP;
-		if (!(ifp->if_flags & IFF_RUNNING))
-			rge_init(ifp);
-		break;
+	/* TODO:SIOCSIFMTU */
 	case SIOCSIFFLAGS:
-		if (ifp->if_flags & IFF_UP) {
-			if (ifp->if_flags & IFF_RUNNING)
-				error = ENETRESET;
-			else
-				rge_init(ifp);
+		RGE_LOCK(sc);
+		if ((if_getflags(ifp) & IFF_UP) != 0) {
+			if ((if_getflags(ifp) & IFF_DRV_RUNNING) == 0) {
+				/*
+				 * TODO: handle promisc/iffmulti changing
+				 * without reprogramming everything.
+				 */
+				rge_init_locked(sc);
+			}
 		} else {
-			if (ifp->if_flags & IFF_RUNNING)
-				rge_stop(ifp);
+			if ((if_getflags(ifp) & IFF_DRV_RUNNING) != 0) {
+				rge_stop_locked(sc);
+			}
 		}
+		RGE_UNLOCK(sc);
+		break;
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		RGE_LOCK(sc);
+		if ((if_getflags(ifp) & IFF_DRV_RUNNING) != 0) {
+			rge_iff_locked(sc);
+		}
+		RGE_UNLOCK(sc);
 		break;
 	case SIOCGIFMEDIA:
 	case SIOCSIFMEDIA:
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
 		break;
-	case SIOCGIFRXR:
-		error = if_rxr_ioctl((struct if_rxrinfo *)ifr->ifr_data,
-		    NULL, MCLBYTES, &sc->sc_queues->q_rx.rge_rx_ring);
-		break;
+	/* TODO: SIOCSIFCAP */
 	default:
-		error = ether_ioctl(ifp, &sc->sc_arpcom, cmd, data);
+		error = ether_ioctl(ifp, cmd, data);
+		break;
 	}
 
-	if (error == ENETRESET) {
-		if (ifp->if_flags & IFF_RUNNING)
-			rge_iff(sc);
-		error = 0;
-	}
-
-	splx(s);
 	return (error);
 }
 
+#if 0
 void
 rge_start(struct ifqueue *ifq)
 {
@@ -986,16 +988,6 @@ rge_transmit_if(if_t ifp, struct mbuf *m)
 	return (ENXIO);
 }
 
-static int
-rge_ioctl_if(if_t ifp, u_long cmd, caddr_t addr)
-{
-	struct rge_softc *sc = if_getsoftc(ifp);
-
-	device_printf(sc->sc_dev, "%s: called!\n", __func__);
-	/* TODO: implement */
-	return (ENOTTY);
-}
-
 static void
 rge_init_if(void *xsc)
 {
@@ -1014,6 +1006,8 @@ rge_init_locked(struct rge_softc *sc)
 	int i, num_miti;
 
 	RGE_ASSERT_LOCKED(sc);
+
+	device_printf(sc->sc_dev, "%s: called!\n", __func__);
 
 	/*
 	 * XXX TODO: calling stop before start feels hacky?
@@ -1259,7 +1253,11 @@ rge_stop_locked(struct rge_softc *sc)
 	struct rge_queues *q = sc->sc_queues;
 	int i;
 
+	RGE_ASSERT_LOCKED(sc);
+
 	callout_stop(&sc->sc_timeout);
+
+	device_printf(sc->sc_dev, "%s: called!\n", __func__);
 
 #if 0
 	ifp->if_timer = 0;

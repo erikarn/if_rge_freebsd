@@ -864,15 +864,18 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	case SIOCSIFFLAGS:
 		RGE_LOCK(sc);
 		if ((if_getflags(ifp) & IFF_UP) != 0) {
-			if ((if_getflags(ifp) & IFF_DRV_RUNNING) == 0) {
+			if ((if_getdrvflags(ifp) & IFF_DRV_RUNNING) == 0) {
 				/*
 				 * TODO: handle promisc/iffmulti changing
 				 * without reprogramming everything.
 				 */
 				rge_init_locked(sc);
+			} else {
+				/* Reinit promisc/multi just in case */
+				rge_iff_locked(sc);
 			}
 		} else {
-			if ((if_getflags(ifp) & IFF_DRV_RUNNING) != 0) {
+			if ((if_getdrvflags(ifp) & IFF_DRV_RUNNING) != 0) {
 				rge_stop_locked(sc);
 			}
 		}
@@ -1023,8 +1026,11 @@ rge_init_locked(struct rge_softc *sc)
 	rge_rx_list_init(q);
 	rge_tx_list_init(q);
 
-	if (rge_chipinit(sc))
+	if (rge_chipinit(sc)) {
+		device_printf(sc->sc_dev, "%s: ERROR: chip init fail!\n",
+		    __func__);
 		return;
+	}
 
 	if (rge_phy_config(sc))
 		return;
@@ -1240,6 +1246,8 @@ rge_init_locked(struct rge_softc *sc)
 	if_setdrvflagbits(sc->sc_ifp, 0, IFF_DRV_OACTIVE);
 
 	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);
+
+	device_printf(sc->sc_dev, "%s: init completed!\n", __func__);
 }
 
 /*

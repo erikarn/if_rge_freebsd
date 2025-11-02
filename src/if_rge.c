@@ -91,8 +91,8 @@ static int		rge_newbuf(struct rge_queues *);
 static void	rge_rx_list_init(struct rge_queues *);
 static void	rge_tx_list_init(struct rge_queues *);
 static void	rge_fill_rx_ring(struct rge_queues *);
+static int	rge_rxeof(struct rge_queues *, struct mbufq *);
 #if 0
-int		rge_rxeof(struct rge_queues *);
 int		rge_txeof(struct rge_queues *);
 #endif
 static int		rge_reset(struct rge_softc *);
@@ -722,12 +722,16 @@ rge_activate(struct device *self, int act)
 static void
 rge_intr_msi(void *arg)
 {
+	struct mbufq rx_mq;
+	struct mbuf *m;
 	struct rge_softc *sc = arg;
 	struct rge_queues *q = sc->sc_queues;
 	uint32_t status;
 	int claimed = 0, rv;
 
 	/* TODO: counter */
+
+	mbufq_init(&rx_mq, RGE_RX_LIST_CNT);
 
 	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) == 0)
 		return;
@@ -753,8 +757,8 @@ rge_intr_msi(void *arg)
 	if (status & sc->rge_intrs) {
 
 		(void) q;
+		rv |= rge_rxeof(q, &rx_mq);
 #if 0
-		rv |= rge_rxeof(q);
 		rv |= rge_txeof(q);
 #endif
 
@@ -778,8 +782,8 @@ rge_intr_msi(void *arg)
 			 * race introduced by changing interrupt
 			 * masks.
 			 */
+			rge_rxeof(q, &rx_mq);
 #if 0
-			rge_rxeof(q);
 			rge_txeof(q);
 #endif
 		} else
@@ -797,6 +801,11 @@ rge_intr_msi(void *arg)
 
 done:
 	RGE_UNLOCK(sc);
+
+	/* Handle any RX frames, outside of the driver lock */
+	while ((m = mbufq_dequeue(&rx_mq)) != NULL)
+		if_input(sc->sc_ifp, m);
+
 	(void) claimed;
 }
 
@@ -1852,51 +1861,55 @@ rge_tx_list_init(struct rge_queues *q)
 	q->q_tx.rge_txq_prodidx = q->q_tx.rge_txq_considx = 0;
 }
 
-#if 0
 int
-rge_rxeof(struct rge_queues *q)
+rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 {
 	struct rge_softc *sc = q->q_sc;
-	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
 	struct mbuf *m;
-	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
-	struct if_rxring *rxr = &q->q_rx.rge_rx_ring;
 	struct rge_rx_desc *cur_rx;
 	struct rge_rxq *rxq;
 	uint32_t rxstat, extsts;
 	int i, mlen, rx = 0;
 	int cons;
+	int maxpkt = 32;
 
-	i = cons = q->q_rx.rge_rxq_considx;
+	RGE_ASSERT_LOCKED(sc);
 
-	while (if_rxr_inuse(rxr) > 0) {
+	/* Note: if_re is POSTREAD/WRITE, rge is only POSTWRITE */
+	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
+	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
+
+	/*
+	 * Note: this isn't the best loop invariant; need to revisit this.
+	 */
+	for (i = cons = q->q_rx.rge_rxq_considx;
+	    maxpkt > 0; i = RGE_NEXT_RX_DESC(i)) {
+		/* break out of loop if we're not running */
+		if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) == 0)
+			break;
+
+		/* get the current rx descriptor to check descriptor status */
 		cur_rx = &q->q_rx.rge_rx_list[i];
-
-		bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-		    i * sizeof(*cur_rx), sizeof(*cur_rx),
-		    BUS_DMASYNC_POSTREAD);
-		rxstat = letoh32(cur_rx->hi_qword1.rx_qword4.rge_cmdsts);
-		if (rxstat & RGE_RDCMDSTS_OWN) {
-			bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-			    i * sizeof(*cur_rx), sizeof(*cur_rx),
-			    BUS_DMASYNC_PREREAD);
+		rxstat = le32toh(cur_rx->hi_qword1.rx_qword4.rge_cmdsts);
+		if ((rxstat & RGE_RDCMDSTS_OWN) != 0) {
 			break;
 		}
 
+		/* Get the current rx buffer, sync */
 		rxq = &q->q_rx.rge_rxq[i];
-		bus_dmamap_sync(sc->sc_dmat, rxq->rxq_dmamap, 0,
-		    rxq->rxq_dmamap->dm_mapsize, BUS_DMASYNC_POSTREAD);
+		/* XXX double check */
+		bus_dmamap_sync(sc->sc_dmat, rxq->rxq_dmamap,
+		    BUS_DMASYNC_POSTREAD);
 		bus_dmamap_unload(sc->sc_dmat, rxq->rxq_dmamap);
 		m = rxq->rxq_mbuf;
 		rxq->rxq_mbuf = NULL;
 
-		i = RGE_NEXT_RX_DESC(i);
-		if_rxr_put(rxr, 1);
 		rx = 1;
 
-		if (ISSET(rxstat, RGE_RDCMDSTS_SOF)) {
+		if ((rxstat & RGE_RDCMDSTS_SOF) != 0) {
 			if (q->q_rx.rge_head != NULL) {
-				ifp->if_ierrors++;
+				if_inc_counter(sc->sc_ifp, IFCOUNTER_IERRORS,
+				    1);
 				m_freem(q->q_rx.rge_head);
 				q->q_rx.rge_tail = &q->q_rx.rge_head;
 			}
@@ -1906,7 +1919,7 @@ rge_rxeof(struct rge_queues *q)
 			m_freem(m);
 			continue;
 		} else
-			CLR(m->m_flags, M_PKTHDR);
+			m->m_flags &= ~M_PKTHDR;
 
 		*q->q_rx.rge_tail = m;
 		q->q_rx.rge_tail = &m->m_next;
@@ -1918,14 +1931,14 @@ rge_rxeof(struct rge_queues *q)
 		m->m_pkthdr.len += mlen;
 
 		if (rxstat & RGE_RDCMDSTS_RXERRSUM) {
-			ifp->if_ierrors++;
+			if_inc_counter(sc->sc_ifp, IFCOUNTER_IERRORS, 1);
 			m_freem(m);
 			q->q_rx.rge_head = NULL;
 			q->q_rx.rge_tail = &q->q_rx.rge_head;
 			continue;
 		}
 
-		if (!ISSET(rxstat, RGE_RDCMDSTS_EOF))
+		if ((rxstat & RGE_RDCMDSTS_EOF) == 0)
 			continue;
 
 		q->q_rx.rge_head = NULL;
@@ -1933,13 +1946,23 @@ rge_rxeof(struct rge_queues *q)
 
 		m_adj(m, -ETHER_CRC_LEN);
 
-		extsts = letoh32(cur_rx->hi_qword1.rx_qword4.rge_extsts);
+		extsts = le32toh(cur_rx->hi_qword1.rx_qword4.rge_extsts);
 
 		/* Check IP header checksum. */
-		if (!(extsts & RGE_RDEXTSTS_IPCSUMERR) &&
-		    (extsts & RGE_RDEXTSTS_IPV4))
-			m->m_pkthdr.csum_flags |= M_IPV4_CSUM_IN_OK;
+		if ((if_getcapenable(sc->sc_ifp) & IFCAP_RXCSUM) != 0) {
+#if 0
+			/* Does it exist for IPv4? */
+			if (extsts & RGE_RDEXTSTS_IPV4)
+				m->m_pkthdr.csum_flags |=
+				    CSUM_IP_CHECKED;
+			if (((extsts & RGE_RDEXTSTS_IPCSUMERR) == 0)
+			    && ((extsts & RGE_RDEXTSTS_IPV4) != 0))
+				m->m_pkthdr.csum_flags |=
+				    CSUM_IP_VALID;
+#endif
 
+#if 0
+		/* XXX TODO: this is still openbsd code */
 		/* Check TCP/UDP checksum. */
 		if ((extsts & (RGE_RDEXTSTS_IPV4 | RGE_RDEXTSTS_IPV6)) &&
 		    (((extsts & RGE_RDEXTSTS_TCPPKT) &&
@@ -1948,46 +1971,34 @@ rge_rxeof(struct rge_queues *q)
 		    !(extsts & RGE_RDEXTSTS_UDPCSUMERR))))
 			m->m_pkthdr.csum_flags |= M_TCP_CSUM_IN_OK |
 			    M_UDP_CSUM_IN_OK;
+#endif
 
-#if NVLAN > 0
+		}
+
 		if (extsts & RGE_RDEXTSTS_VTAG) {
 			m->m_pkthdr.ether_vtag =
 			    ntohs(extsts & RGE_RDEXTSTS_VLAN_MASK);
 			m->m_flags |= M_VLANTAG;
 		}
-#endif
 
-		ml_enqueue(&ml, m);
+		mbufq_enqueue(mq, m);
 	}
 
 	if (!rx)
 		return (0);
 
-	if (i >= cons) {
-		bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-		    cons * sizeof(*cur_rx), (i - cons) * sizeof(*cur_rx),
-		    BUS_DMASYNC_POSTWRITE);
-	} else {
-		bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-		    cons * sizeof(*cur_rx),
-		    (RGE_RX_LIST_CNT - cons) * sizeof(*cur_rx),
-		    BUS_DMASYNC_POSTWRITE);
-		if (i > 0) {
-			bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
-			    0, i * sizeof(*cur_rx),
-			    BUS_DMASYNC_POSTWRITE);
-		}
-	}
+	/* XXX check */
+	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
+	    BUS_DMASYNC_POSTWRITE);
 
-	if (ifiq_input(&ifp->if_rcv, &ml))
-		if_rxr_livelocked(rxr);
-
+	/* Update the consumer index, refill the RX ring */
 	q->q_rx.rge_rxq_considx = i;
 	rge_fill_rx_ring(q);
 
 	return (1);
 }
 
+#if 0
 int
 rge_txeof(struct rge_queues *q)
 {

@@ -1126,13 +1126,13 @@ rge_init_locked(struct rge_softc *sc)
 
 	/* Load the addresses of the RX and TX lists into the chip. */
 	RGE_WRITE_4(sc, RGE_RXDESC_ADDR_LO,
-	    RGE_ADDR_LO(q->q_rx.rge_rx_listseg.ds_addr));
+	    RGE_ADDR_LO(q->q_rx.rge_rx_list_paddr));
 	RGE_WRITE_4(sc, RGE_RXDESC_ADDR_HI,
-	    RGE_ADDR_HI(q->q_rx.rge_rx_listseg.ds_addr));
+	    RGE_ADDR_HI(q->q_rx.rge_rx_list_paddr));
 	RGE_WRITE_4(sc, RGE_TXDESC_ADDR_LO,
-	    RGE_ADDR_LO(q->q_tx.rge_tx_listseg.ds_addr));
+	    RGE_ADDR_LO(q->q_tx.rge_tx_list_paddr));
 	RGE_WRITE_4(sc, RGE_TXDESC_ADDR_HI,
-	    RGE_ADDR_HI(q->q_tx.rge_tx_listseg.ds_addr));
+	    RGE_ADDR_HI(q->q_tx.rge_tx_list_paddr));
 
 	/* Set the initial RX and TX configurations. */
 	if (sc->rge_type == MAC_R25)
@@ -1530,10 +1530,27 @@ rge_ifmedia_sts(if_t ifp, struct ifmediareq *ifmr)
 static void
 rge_dma_load_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 {
-	bus_dma_segment_t *paddr = (bus_dma_segment_t *) arg;
-	/* TODO: we only handle one segment here! */
-	/* TODO: print if error! */
-	*paddr = segs[0];
+	int i;
+	bus_addr_t *paddr = (bus_addr_t *) arg;
+
+	printf("%s: called; segs=%p, nsegs=%d, error=%d\n",
+	    __func__, segs, nsegs, error);
+
+	*paddr = 0;
+
+	if (error)
+		return;
+
+	if (nsegs != 1) {
+		printf("%s: too many segs (got %d)\n", __func__, nsegs);
+		return;
+	}
+
+	if (segs != 0)
+		for (i = 0; i < nsegs; i++)
+			printf("  segs[%d]=%p\n", i, segs);
+
+	*paddr = segs[0].ds_addr;
 }
 
 /**
@@ -1559,7 +1576,8 @@ rge_allocmem(struct rge_softc *sc)
 		goto error;
 	}
 	error = bus_dmamem_alloc(sc->sc_dmat_tx_desc,
-	    (void **) &q->q_tx.rge_tx_list, BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT,
+	    (void **) &q->q_tx.rge_tx_list,
+	        BUS_DMA_NOWAIT | BUS_DMA_ZERO| BUS_DMA_COHERENT,
 	    &q->q_tx.rge_tx_list_map);
 	if (error) {
 		device_printf(sc->sc_dev, "%s: error (alloc tx_list.map) (%d)\n",
@@ -1567,16 +1585,21 @@ rge_allocmem(struct rge_softc *sc)
 		goto error;
 	}
 
+	device_printf(sc->sc_dev, "%s: tx_list=%p\n", __func__,
+	    q->q_tx.rge_tx_list);
+	device_printf(sc->sc_dev, "%s: tx_list_map=%p\n", __func__,
+	    q->q_tx.rge_tx_list_map);
+
 	/* Load the map for the TX ring. */
 	error = bus_dmamap_load(sc->sc_dmat_tx_desc,
 	    q->q_tx.rge_tx_list_map,
 	    &q->q_tx.rge_tx_list,
 	    RGE_TX_LIST_SZ,
 	    rge_dma_load_cb,
-	    (void *) &q->q_tx.rge_tx_listseg,
+	    (void *) &q->q_tx.rge_tx_list_paddr,
 	    BUS_DMA_NOWAIT);
 
-	if (error) {
+	if ((error != 0) || (q->q_tx.rge_tx_list_paddr == 0)) {
 		device_printf(sc->sc_dev, "%s: error (load tx_list.map) (%d)\n",
 		    __func__, error);
 		goto error;
@@ -1612,16 +1635,21 @@ rge_allocmem(struct rge_softc *sc)
 		goto error;
 	}
 
+	device_printf(sc->sc_dev, "%s: rx_list=%p\n", __func__,
+	    q->q_rx.rge_rx_list);
+	device_printf(sc->sc_dev, "%s: rx_list_map=%p\n", __func__,
+	    q->q_rx.rge_rx_list_map);
+
 	/* Load the map for the RX ring. */
 	error = bus_dmamap_load(sc->sc_dmat_rx_desc,
 	    q->q_rx.rge_rx_list_map,
-	    &q->q_rx.rge_rx_list,
+	    q->q_rx.rge_rx_list,
 	    RGE_RX_LIST_SZ,
 	    rge_dma_load_cb,
-	    (void *) &q->q_rx.rge_rx_listseg,
+	    (void *) &q->q_rx.rge_rx_list_paddr,
 	    BUS_DMA_NOWAIT);
 
-	if (error) {
+	if ((error != 0) || (q->q_rx.rge_rx_list_paddr == 0)) {
 		device_printf(sc->sc_dev, "%s: error (load rx_list.map) (%d)\n",
 		    __func__, error);
 		goto error;
@@ -1660,12 +1688,12 @@ rge_freemem(struct rge_softc *sc)
 	RGE_ASSERT_UNLOCKED(sc);
 
 	/* TX desc */
-	if (q->q_tx.rge_tx_list_map != 0) {
-		bus_dmamap_unload(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map);
+	bus_dmamap_unload(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map);
+	if (q->q_tx.rge_tx_list != NULL)
 		bus_dmamem_free(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list,
 		    q->q_tx.rge_tx_list_map);
-		memset(&q->q_tx, 0, sizeof(q->q_tx));
-	}
+	bus_dmamap_destroy(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map);
+	memset(&q->q_tx, 0, sizeof(q->q_tx));
 
 	/* TX buf */
 	for (i = 0; i < RGE_TX_LIST_CNT; i++) {
@@ -1699,12 +1727,12 @@ rge_freemem(struct rge_softc *sc)
 	}
 
 	/* RX desc */
-	if (q->q_rx.rge_rx_list_map != 0) {
-		bus_dmamap_unload(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map);
+	bus_dmamap_unload(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map);
+	if (q->q_rx.rge_rx_list != 0)
 		bus_dmamem_free(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list,
 		    q->q_rx.rge_rx_list_map);
-		memset(&q->q_rx, 0, sizeof(q->q_tx));
-	}
+	bus_dmamap_destroy(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map);
+	memset(&q->q_rx, 0, sizeof(q->q_tx));
 
 	/* RX buf */
 	for (i = 0; i < RGE_RX_LIST_CNT; i++) {

@@ -340,8 +340,7 @@ struct rge_tx {
 	int			rge_txq_prodidx;
 	int			rge_txq_considx;
 
-	bus_dma_segment_t	rge_tx_listseg;
-//	int			rge_tx_listnseg;
+	bus_addr_t		rge_tx_list_paddr;
 	bus_dmamap_t		rge_tx_list_map;
 	struct rge_tx_desc	*rge_tx_list;
 };
@@ -352,8 +351,7 @@ struct rge_rx {
 	int			rge_rxq_considx;
 
 //	struct if_rxring	rge_rx_ring;
-	bus_dma_segment_t	rge_rx_listseg;
-//	int			rge_rx_listnseg;
+	bus_addr_t		rge_rx_list_paddr;
 	bus_dmamap_t		rge_rx_list_map;
 	struct rge_rx_desc	*rge_rx_list;
 

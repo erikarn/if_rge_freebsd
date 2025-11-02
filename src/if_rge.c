@@ -71,8 +71,8 @@ static int		rge_detach(device_t);
 
 #if 0
 int		rge_activate(struct device *, int);
-int		rge_intr(void *);
 #endif
+static void	rge_intr_msi(void *);
 static int	rge_ioctl(struct ifnet *, u_long, caddr_t);
 #if 0
 void		rge_start(struct ifqueue *);
@@ -233,9 +233,10 @@ rge_attach(device_t dev)
 	uint8_t eaddr[ETHER_ADDR_LEN];
 	struct rge_softc *sc;
 	struct rge_queues *q;
-	uint32_t hwrev;
-	int rid;
+	uint32_t hwrev, reg;
+	int i, rid;
 	int error;
+	int msic;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -311,6 +312,56 @@ rge_attach(device_t dev)
 
 	sc->sc_queues = q;
 	sc->sc_nqueues = 1;
+
+	/* Check if PCIe */
+	if (pci_find_cap(dev, PCIY_EXPRESS, &reg) == 0) {
+		sc->rge_flags |= RGE_FLAG_PCIE;
+		sc->sc_expcap = reg;
+	}
+
+	/* Allocate MSI */
+	msic = pci_msi_count(dev);
+	if (msic == 0) {
+		device_printf(sc->sc_dev, "%s: only MSI interrupts supported\n",
+		    __func__);
+		goto fail;
+	}
+
+	msic = RGE_MSI_MESSAGES;
+	if (pci_alloc_msi(dev, &msic) != 0) {
+		device_printf(sc->sc_dev, "%s: failed to allocate MSI\n",
+		    __func__);
+		goto fail;
+	}
+
+	sc->rge_flags |= RGE_FLAG_MSI;
+
+	/* We need at least one MSI */
+	if (msic < RGE_MSI_MESSAGES) {
+		device_printf(sc->sc_dev, "%s: didn't allocate enough MSI\n",
+		    __func__);
+		goto fail;
+	}
+
+	/*
+	 * Allocate interrupt entries.
+	 */
+	for (i = 0, rid = 1; i < RGE_MSI_MESSAGES; i++, rid++) {
+		sc->sc_irq[i] = bus_alloc_resource_any(dev, SYS_RES_IRQ,
+		    &rid, RF_ACTIVE);
+		if (sc->sc_irq[i] == NULL) {
+			device_printf(dev, "%s: couldn't allocate MSI %d",
+			    __func__, rid);
+			goto fail;
+		}
+	}
+
+	/* Hook interrupts */
+	for (i = 0; i < RGE_MSI_MESSAGES; i++) {
+		error = bus_setup_intr(dev, sc->sc_irq[i],
+		    INTR_TYPE_NET | INTR_MPSAFE, NULL, rge_intr_msi,
+		    sc, &sc->sc_ih[i]);
+	}
 
 #if 0
 	/*
@@ -559,6 +610,7 @@ static int
 rge_detach(device_t dev)
 {
 	struct rge_softc *sc = device_get_softc(dev);
+	int i, rid;
 
 	/* TODO: global flag, detaching */
 
@@ -572,7 +624,6 @@ rge_detach(device_t dev)
 	rge_stop_locked(sc);
 
 	/* TODO: stop DMA */
-
 
 	/* TODO: wait for completion */
 
@@ -609,7 +660,27 @@ rge_detach(device_t dev)
 	if (sc->sc_dmat)
 		bus_dma_tag_destroy(sc->sc_dmat);
 
-	/* TODO: free interrupt allocation */
+	/* Teardown interrupts */
+	for (i = 0; i < RGE_MSI_MESSAGES; i++) {
+		if (sc->sc_ih[i] != NULL) {
+			bus_teardown_intr(sc->sc_dev, sc->sc_irq[i],
+			    sc->sc_ih[i]);
+			sc->sc_ih[i] = NULL;
+		}
+	}
+
+	/* Free interrupt resources */
+	for (i = 0, rid = 1; i < RGE_MSI_MESSAGES; i++, rid++) {
+		if (sc->sc_irq[i] != NULL) {
+			bus_release_resource(sc->sc_dev, SYS_RES_IRQ,
+			    rid, sc->sc_irq[i]);
+			sc->sc_irq[i] = NULL;
+		}
+	}
+
+	/* Free MSI allocation */
+	if (sc->rge_flags & RGE_FLAG_MSI)
+		pci_release_msi(dev);
 
 	if (sc->sc_bres) {
 		device_printf(sc->sc_dev, "%s: release mmio\n", __func__);
@@ -649,12 +720,14 @@ rge_activate(struct device *self, int act)
 #endif
 
 static void
-rge_intr(void *arg)
+rge_intr_msi(void *arg)
 {
 	struct rge_softc *sc = arg;
 	struct rge_queues *q = sc->sc_queues;
 	uint32_t status;
 	int claimed = 0, rv;
+
+	/* TODO: counter */
 
 	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) == 0)
 		return;

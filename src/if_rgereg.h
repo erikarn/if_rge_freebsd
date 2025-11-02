@@ -25,6 +25,9 @@
 #define RGE_PCI_BAR1		(PCI_MAPREG_START + 4)
 #define RGE_PCI_BAR2		(PCI_MAPREG_START + 8)
 
+/* For now, a single MSI message, no multi-RX/TX ring support */
+#define	RGE_MSI_MESSAGES	1
+
 #define RGE_MAC0		0x0000
 #define RGE_MAC4		0x0004
 #define RGE_MAR0		0x0008
@@ -402,7 +405,9 @@ struct rge_softc {
 	if_t			sc_ifp;		/* Ethernet common data */
 	bool			sc_ether_attached;
 	struct mtx		sc_mtx;
-	void			*sc_ih;		/* interrupt vectoring */
+	struct resource		*sc_irq[RGE_MSI_MESSAGES];
+	void			*sc_ih[RGE_MSI_MESSAGES];
+	uint32_t		sc_expcap;	/* PCe exp cap */
 	struct resource		*sc_bres;	/* bus space MMIO/IOPORT resource */
 	bus_space_handle_t	rge_bhandle;	/* bus space handle */
 	bus_space_tag_t		rge_btag;	/* bus space tag */
@@ -429,6 +434,7 @@ struct rge_softc {
 	uint16_t		rge_rcodever;
 	uint32_t		rge_flags;
 #define RGE_FLAG_MSI		0x00000001
+#define RGE_FLAG_PCIE		0x00000002
 
 	uint32_t		rge_intrs;
 	int			rge_timerintr;

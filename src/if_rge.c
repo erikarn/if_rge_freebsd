@@ -1760,13 +1760,34 @@ rge_freemem(struct rge_softc *sc)
 	return (0);
 }
 
+static uint32_t
+rx_ring_space(struct rge_queues *q)
+{
+	uint32_t prod, cons;
+	uint32_t ret;
+
+	RGE_ASSERT_LOCKED(sc);
+
+	prod = q->q_rx.rge_rxq_prodidx;
+	cons = q->q_rx.rge_rxq_considx;
+
+	ret = (cons + RGE_RX_LIST_CNT - prod - 1) % RGE_RX_LIST_CNT + 1;
+
+	if (ret > RGE_RX_LIST_CNT)
+		return RGE_RX_LIST_CNT;
+
+	return (ret);
+}
+
 /*
- * Initialize the RX descriptor and attach an mbuf cluster.
+ * Initialize the RX descriptor and attach an mbuf cluster at the given offset.
  *
  * Note: this relies on the rxr ring buffer abstraction to not
  * over-fill the RX ring.  For FreeBSD we'll need to use the
  * prod/cons RX indexes to know how much RX ring space to
  * populate.
+ *
+ * This routine will increment the producer index if successful.
  *
  * This must be called with the driver lock held.
  */
@@ -1780,7 +1801,8 @@ rge_newbuf(struct rge_queues *q)
 	bus_dmamap_t rxmap;
 	bus_dma_segment_t seg[1];
 	uint32_t cmdsts;
-	int idx, nsegs;
+	int nsegs;
+	uint32_t idx;
 
 	RGE_ASSERT_LOCKED(sc);
 
@@ -1788,6 +1810,8 @@ rge_newbuf(struct rge_queues *q)
 	 * TODO: Verify we have enough space in the ring; error out
 	 * if we do not.
 	 */
+	if (rx_ring_space(q) == 0)
+		return (ENOBUFS);
 
 	/* Allocate single buffer backed mbuf of MCLBYTES */
 	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
@@ -1835,7 +1859,7 @@ rge_newbuf(struct rge_queues *q)
 
 	device_printf(sc->sc_dev, "%s: [%d]: m=%p, phys=0x%jx len %ju, desc=0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
 	    __func__,
-	    q->q_rx.rge_rxq_prodidx,
+	    idx,
 	    m,
 	    (uintmax_t) seg[0].ds_addr,
 	    (uintmax_t) seg[0].ds_len,
@@ -1849,7 +1873,6 @@ rge_newbuf(struct rge_queues *q)
 	    ((uint32_t *) r)[7]);
 
 	q->q_rx.rge_rxq_prodidx = RGE_NEXT_RX_DESC(idx);
-
 
 	return (0);
 }
@@ -1868,14 +1891,28 @@ rge_rx_list_init(struct rge_queues *q)
 	rge_fill_rx_ring(q);
 }
 
+/**
+ * @brief Fill / refill the RX ring as needed.
+ *
+ * This will fill the RX ring with frames until it is full.
+ * It will start at prodidx and fill until considx - 1.
+ */
 static void
 rge_fill_rx_ring(struct rge_queues *q)
 {
-	int i;
+	struct rge_softc *sc = q->q_sc;
+	uint32_t count, i, prod, cons;
 
 	RGE_ASSERT_LOCKED(sc);
 
-	for (i = 0; i < RGE_RX_LIST_CNT; i++) {
+	prod = q->q_rx.rge_rxq_prodidx;
+	cons = q->q_rx.rge_rxq_considx;
+	count = rx_ring_space(q);
+	device_printf(sc->sc_dev, "%s: prod=%u, cons=%u, space=%u\n",
+	  __func__,
+	  prod, cons, count);
+
+	for (i = 0; i < count; i++) {
 		if (rge_newbuf(q))
 			break;
 	}

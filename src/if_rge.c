@@ -1807,11 +1807,26 @@ rge_newbuf(struct rge_queues *q)
 	RGE_ASSERT_LOCKED(sc);
 
 	/*
-	 * TODO: Verify we have enough space in the ring; error out
+	 * Verify we have enough space in the ring; error out
 	 * if we do not.
 	 */
 	if (rx_ring_space(q) == 0)
 		return (ENOBUFS);
+
+	idx = q->q_rx.rge_rxq_prodidx;
+	rxq = &q->q_rx.rge_rxq[idx];
+	rxmap = rxq->rxq_dmamap;
+
+	/*
+	 * If we already have an mbuf here then something messed up;
+	 * exit out as the hardware may be DMAing to it.
+	 */
+	if (rxq->rxq_mbuf != NULL) {
+		RGE_PRINT_ERROR(sc,
+		    "%s: RX ring slot %d already has an mbuf?\n", __func__,
+		    idx);
+		return (ENOBUFS);
+	}
 
 	/* Allocate single buffer backed mbuf of MCLBYTES */
 	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
@@ -1820,10 +1835,6 @@ rge_newbuf(struct rge_queues *q)
 
 	m->m_len = m->m_pkthdr.len = MCLBYTES;
 	m_adj(m, ETHER_ALIGN);
-
-	idx = q->q_rx.rge_rxq_prodidx;
-	rxq = &q->q_rx.rge_rxq[idx];
-	rxmap = rxq->rxq_dmamap;
 
 	nsegs = 1;
 	if (bus_dmamap_load_mbuf_sg(sc->sc_dmat_rx_buf, rxmap, m, seg, &nsegs,
@@ -1834,7 +1845,11 @@ rge_newbuf(struct rge_queues *q)
 
 	bus_dmamap_sync(sc->sc_dmat_rx_buf, rxmap, BUS_DMASYNC_PREREAD);
 
-	/* Map the segments into RX descriptors. */
+	/*
+	 * Map the segment into RX descriptors.  Note that this
+	 * only currently supports a single segment per mbuf;
+	 * the call to load_mbuf_sg above specified a single segment.
+	 */
 	r = &q->q_rx.rge_rx_list[idx];
 
 	rxq->rxq_mbuf = m;
@@ -1847,15 +1862,77 @@ rge_newbuf(struct rge_queues *q)
 	r->hi_qword1.rx_qword4.rge_extsts = htole32(0);
 	r->hi_qword0.rge_addr = htole64(seg[0].ds_addr);
 
+	/*
+	 * This dance looks like it's designed to ensure the hardware
+	 * sees the DMA descriptor flags /first/ before it sees the
+	 * RGE_RDCMDSTS_OWN, which signifies to the hardware that it
+	 * owns the buffer.  If the hardware hits a descriptor slot
+	 * with RGE_RDCMDSTS_OWN = 0, it stops on this descriptor
+	 * and will re-read this descriptor slot until it's ready
+	 * to continue.  There's no doorbell register being poked to
+	 * signal RX DMA can continue, it just keeps retrying.
+	 *
+	 * However, this ported as-is from OpenBSD is currently problematic
+	 * because it supports doing /partial/ syncs (ie, individual descriptor
+	 * ring slots) versus the whole range that FreeBSD does.
+	 *
+	 * This has the unfortunate side-effect that it's constantly
+	 * doing flushes and bounce buffer copies of the whole region.
+	 * It's likely fine on x86 (and could be optimised to be a single
+	 * pre and post update operation around multiple ring refills.)
+	 *
+	 * However! I hope for the descriptor rings it is NOT doing bounce
+	 * buffer copies or flush/invalidate because the hardware could
+	 * be updating things from underneath us.  When using realtek
+	 * NICs on ARM/MIPS hardware without DMA coherency the only real
+	 * way to get this to work right is to put the descriptor ring
+	 * in non-cached memory.
+	 *
+	 * In any case:
+	 *
+	 * XXX TODO: this all needs validating!
+	 */
+
+	/*
+	 * This says "Do sync required after update of host memory
+	 * by CPU, and prior to device access to host memory.
+	 * Thus, all of above descriptor writes are flushed, but not
+	 * the OWN flag.
+	 */
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_PREWRITE);
 
+	/*
+	 * This says "Do any sync required after device access to host
+	 * memory."  Since we've not done any changes ourselves,
+	 * this is to hopefully ensure we get the most up to date
+	 * version of whatever the hardware may have just squeezed an
+	 * update into since.
+	 */
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_POSTWRITE);
+
+	/*
+	 * Mark the specific descriptor slot as "this descriptor is now
+	 * owned by the hardware", which when the hardware next sees
+	 * this, it'll continue RX DMA.
+	 */
 	cmdsts |= RGE_RDCMDSTS_OWN;
 	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(cmdsts);
+
+	/*
+	 * This says "perform any sync required to an update of host
+	 * memory by the device" (PREREAD) and "perform any sync
+	 * required after device access to host memory" (PREWRITE).
+	 */
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
+
+	/*
+	 * At this point the hope is the whole ring is now updated and
+	 * consistent; if the hardware was waiting for a descriptor to be
+	 * ready to write into then it should be ready here.
+	 */
 
 	RGE_DPRINTF(sc, RGE_DEBUG_RECV_DESC,
 	    "%s: [%d]: m=%p, phys=0x%jx len %ju, "
@@ -1896,8 +1973,9 @@ rge_rx_list_init(struct rge_queues *q)
 /**
  * @brief Fill / refill the RX ring as needed.
  *
- * This will fill the RX ring with frames until it is full.
- * It will start at prodidx and fill until considx - 1.
+ * This will fill the RX ring with frames from prodidx until it is full.
+ *
+ * This must be called with the driver lock held.
  */
 static void
 rge_fill_rx_ring(struct rge_queues *q)

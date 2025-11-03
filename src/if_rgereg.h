@@ -202,8 +202,8 @@
 #define RGE_CPLUSCMD_RXCSUM	0x0020
 
 #define RGE_TX_NSEGS		32
-#define RGE_TX_LIST_CNT		1024
-#define RGE_RX_LIST_CNT		1024
+#define RGE_TX_LIST_CNT		16 /* 1024 */
+#define RGE_RX_LIST_CNT		16 /* 1024 */
 #define RGE_ALIGN		256
 #define RGE_TX_LIST_SZ		(sizeof(struct rge_tx_desc) * RGE_TX_LIST_CNT)
 #define RGE_RX_LIST_SZ		(sizeof(struct rge_rx_desc) * RGE_RX_LIST_CNT)

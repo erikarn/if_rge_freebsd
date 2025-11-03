@@ -58,13 +58,7 @@
 #include "if_rge_vendor.h"
 #include "if_rgereg.h"
 #include "if_rge_microcode.h"
-
-#ifdef RGE_DEBUG
-#define DPRINTF(x)	do { if (rge_debug > 0) printf x; } while (0)
-int rge_debug = 0;
-#else
-#define DPRINTF(x)
-#endif
+#include "if_rge_debug.h"
 
 static int		rge_attach(device_t);
 static int		rge_detach(device_t);
@@ -278,7 +272,8 @@ rge_attach(device_t dev)
 	sc->sc_bres = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
 	    RF_ACTIVE);
 	if (sc->sc_bres == NULL) {
-		device_printf(dev, "Unable to allocate bus resource: memory\n");
+		RGE_PRINT_ERROR(sc,
+		    "Unable to allocate bus resource: memory\n");
 		goto fail;
 	}
 	sc->rge_bhandle = rman_get_bushandle(sc->sc_bres);
@@ -304,7 +299,7 @@ rge_attach(device_t dev)
 
 	q = malloc(sizeof(struct rge_queues), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (q == NULL) {
-		device_printf(dev, "Unable to malloc rge_queues memory\n");
+		RGE_PRINT_ERROR(sc, "Unable to malloc rge_queues memory\n");
 		goto fail;
 	}
 	q->q_sc = sc;
@@ -322,14 +317,14 @@ rge_attach(device_t dev)
 	/* Allocate MSI */
 	msic = pci_msi_count(dev);
 	if (msic == 0) {
-		device_printf(sc->sc_dev, "%s: only MSI interrupts supported\n",
+		RGE_PRINT_ERROR(sc, "%s: only MSI interrupts supported\n",
 		    __func__);
 		goto fail;
 	}
 
 	msic = RGE_MSI_MESSAGES;
 	if (pci_alloc_msi(dev, &msic) != 0) {
-		device_printf(sc->sc_dev, "%s: failed to allocate MSI\n",
+		RGE_PRINT_ERROR(sc, "%s: failed to allocate MSI\n",
 		    __func__);
 		goto fail;
 	}
@@ -338,7 +333,7 @@ rge_attach(device_t dev)
 
 	/* We need at least one MSI */
 	if (msic < RGE_MSI_MESSAGES) {
-		device_printf(sc->sc_dev, "%s: didn't allocate enough MSI\n",
+		RGE_PRINT_ERROR(sc, "%s: didn't allocate enough MSI\n",
 		    __func__);
 		goto fail;
 	}
@@ -350,7 +345,7 @@ rge_attach(device_t dev)
 		sc->sc_irq[i] = bus_alloc_resource_any(dev, SYS_RES_IRQ,
 		    &rid, RF_ACTIVE);
 		if (sc->sc_irq[i] == NULL) {
-			device_printf(dev, "%s: couldn't allocate MSI %d",
+			RGE_PRINT_ERROR(sc, "%s: couldn't allocate MSI %d",
 			    __func__, rid);
 			goto fail;
 		}
@@ -404,9 +399,9 @@ rge_attach(device_t dev)
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat);
 	if (error) {
-		device_printf(dev,
+		RGE_PRINT_ERROR(sc,
 		    "couldn't allocate device DMA tag (error %d)\n", error);
-		    goto fail;
+		goto fail;
 	}
 
 	/* Allocate TX/RX descriptor and buffer tags */
@@ -422,8 +417,9 @@ rge_attach(device_t dev)
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_tx_desc);
 	if (error) {
-		device_printf(dev,
-		    "couldn't allocate device TX descriptor DMA tag (error %d)\n", error);
+		RGE_PRINT_ERROR(sc,
+		    "couldn't allocate device TX descriptor "
+		    "DMA tag (error %d)\n", error);
 		    goto fail;
 	}
 
@@ -439,9 +435,10 @@ rge_attach(device_t dev)
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_tx_buf);
 	if (error) {
-		device_printf(dev,
-		    "couldn't allocate device TX buffer DMA tag (error %d)\n", error);
-		    goto fail;
+		RGE_PRINT_ERROR(sc,
+		    "couldn't allocate device TX buffer DMA tag (error %d)\n",
+		    error);
+		goto fail;
 	}
 
 	error = bus_dma_tag_create(sc->sc_dmat,
@@ -456,9 +453,10 @@ rge_attach(device_t dev)
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_rx_desc);
 	if (error) {
-		device_printf(dev,
-		    "couldn't allocate device RX descriptor DMA tag (error %d)\n", error);
-		    goto fail;
+		RGE_PRINT_ERROR(sc,
+		    "couldn't allocate device RX descriptor "
+		    "DMA tag (error %d)\n", error);
+		goto fail;
 	}
 
 	error = bus_dma_tag_create(sc->sc_dmat,
@@ -473,9 +471,10 @@ rge_attach(device_t dev)
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_rx_buf);
 	if (error) {
-		device_printf(dev,
-		    "couldn't allocate device RX buffer DMA tag (error %d)\n", error);
-		    goto fail;
+		RGE_PRINT_ERROR(sc,
+		    "couldn't allocate device RX buffer DMA tag (error %d)\n",
+		    error);
+		goto fail;
 	}
 
 
@@ -503,11 +502,12 @@ rge_attach(device_t dev)
 		device_printf(dev, "RTL8127\n");
 		break;
 	default:
-		device_printf(dev, "unknown version 0x%08x\n", hwrev);
+		RGE_PRINT_ERROR(sc, "unknown version 0x%08x\n", hwrev);
 		goto fail;
 	}
 
-	device_printf(dev, "HWREV: 0x%08x; rge_type=%d\n", hwrev, sc->rge_type);
+	RGE_PRINT_INFO(sc, "HWREV: 0x%08x; rge_type=%d\n", hwrev,
+	    sc->rge_type);
 
 	rge_config_imtype(sc, RGE_IMTYPE_SIM);
 
@@ -536,7 +536,7 @@ rge_attach(device_t dev)
 	rge_get_macaddr(sc, eaddr);
 	RGE_UNLOCK(sc);
 
-	device_printf(dev, "MAC address %6D\n", eaddr, ":");
+	RGE_PRINT_INFO(sc, "MAC address %6D\n", eaddr, ":");
 
 #if 0
 	memcpy(sc->sc_arpcom.ac_enaddr, eaddr, ETHER_ADDR_LEN);
@@ -634,29 +634,30 @@ rge_detach(device_t dev)
 	RGE_UNLOCK(sc);
 
 	/* Free descriptor memory */
-	device_printf(sc->sc_dev, "%s: freemem\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: freemem\n", __func__);
 	rge_freemem(sc);
 
 	if (sc->sc_ifp) {
-		device_printf(sc->sc_dev, "%s: ifdetach/if_free\n", __func__);
+		RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: ifdetach/if_free\n",
+		    __func__);
 		if (sc->sc_ether_attached)
 			ether_ifdetach(sc->sc_ifp);
 		if_free(sc->sc_ifp);
 	}
 
-	device_printf(sc->sc_dev, "%s: sc_dmat_tx_desc\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat_tx_desc\n", __func__);
 	if (sc->sc_dmat_tx_desc)
 		bus_dma_tag_destroy(sc->sc_dmat_tx_desc);
-	device_printf(sc->sc_dev, "%s: sc_dmat_tx_buf\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat_tx_buf\n", __func__);
 	if (sc->sc_dmat_tx_buf)
 		bus_dma_tag_destroy(sc->sc_dmat_tx_buf);
-	device_printf(sc->sc_dev, "%s: sc_dmat_rx_desc\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat_rx_desc\n", __func__);
 	if (sc->sc_dmat_rx_desc)
 		bus_dma_tag_destroy(sc->sc_dmat_rx_desc);
-	device_printf(sc->sc_dev, "%s: sc_dmat_rx_buf\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat_rx_buf\n", __func__);
 	if (sc->sc_dmat_rx_buf)
 		bus_dma_tag_destroy(sc->sc_dmat_rx_buf);
-	device_printf(sc->sc_dev, "%s: sc_dmat\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat\n", __func__);
 	if (sc->sc_dmat)
 		bus_dma_tag_destroy(sc->sc_dmat);
 
@@ -683,7 +684,8 @@ rge_detach(device_t dev)
 		pci_release_msi(dev);
 
 	if (sc->sc_bres) {
-		device_printf(sc->sc_dev, "%s: release mmio\n", __func__);
+		RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: release mmio\n",
+		    __func__);
 		bus_release_resource(dev, SYS_RES_MEMORY,
 		    rman_get_rid(sc->sc_bres), sc->sc_bres);
 		sc->sc_bres = NULL;
@@ -1048,7 +1050,7 @@ rge_watchdog(struct ifnet *ifp)
 {
 	struct rge_softc *sc = ifp->if_softc;
 
-	printf("%s: watchdog timeout\n", sc->sc_dev.dv_xname);
+	RGE_PRINT_ERROR("%s: watchdog timeout\n", sc->sc_dev.dv_xname);
 	ifp->if_oerrors++;
 
 	rge_init(ifp);
@@ -1060,7 +1062,7 @@ rge_qflush_if(if_t ifp)
 {
 	struct rge_softc *sc = if_getsoftc(ifp);
 
-	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+	RGE_PRINT_TODO(sc, "%s: called!\n", __func__);
 }
 
 static int
@@ -1068,7 +1070,7 @@ rge_transmit_if(if_t ifp, struct mbuf *m)
 {
 	struct rge_softc *sc = if_getsoftc(ifp);
 
-	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+	RGE_PRINT_TODO(sc, "%s: called!\n", __func__);
 	/* Remember, don't free the mbuf on error! */
 	return (ENXIO);
 }
@@ -1092,7 +1094,7 @@ rge_init_locked(struct rge_softc *sc)
 
 	RGE_ASSERT_LOCKED(sc);
 
-	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: called!\n", __func__);
 
 	/*
 	 * XXX TODO: calling stop before start feels hacky?
@@ -1109,8 +1111,7 @@ rge_init_locked(struct rge_softc *sc)
 	rge_tx_list_init(q);
 
 	if (rge_chipinit(sc)) {
-		device_printf(sc->sc_dev, "%s: ERROR: chip init fail!\n",
-		    __func__);
+		RGE_PRINT_ERROR(sc, "%s: ERROR: chip init fail!\n", __func__);
 		return;
 	}
 
@@ -1329,7 +1330,7 @@ rge_init_locked(struct rge_softc *sc)
 
 	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);
 
-	device_printf(sc->sc_dev, "%s: init completed!\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: init completed!\n", __func__);
 }
 
 /*
@@ -1347,7 +1348,7 @@ rge_stop_locked(struct rge_softc *sc)
 
 	callout_stop(&sc->sc_timeout);
 
-	device_printf(sc->sc_dev, "%s: called!\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: called!\n", __func__);
 
 #if 0
 	ifp->if_timer = 0;
@@ -1471,7 +1472,7 @@ rge_ifmedia_upd(if_t ifp)
 		if_setbaudrate(ifp, IF_Mbps(10));
 		break;
 	default:
-		device_printf(sc->sc_dev, "unsupported media type\n");
+		RGE_PRINT_ERROR(sc, "unsupported media type\n");
 		return (EINVAL);
 	}
 
@@ -1571,7 +1572,7 @@ rge_allocmem(struct rge_softc *sc)
 	error = bus_dmamap_create(sc->sc_dmat, BUS_DMA_COHERENT,
 	    &q->q_tx.rge_tx_list_map);
 	if (error) {
-		device_printf(sc->sc_dev, "%s: error (create tx_list.map) (%d)\n",
+		RGE_PRINT_ERROR(sc, "%s: error (create tx_list.map) (%d)\n",
 		    __func__, error);
 		goto error;
 	}
@@ -1580,14 +1581,14 @@ rge_allocmem(struct rge_softc *sc)
 	        BUS_DMA_NOWAIT | BUS_DMA_ZERO| BUS_DMA_COHERENT,
 	    &q->q_tx.rge_tx_list_map);
 	if (error) {
-		device_printf(sc->sc_dev, "%s: error (alloc tx_list.map) (%d)\n",
+		RGE_PRINT_ERROR(sc, "%s: error (alloc tx_list.map) (%d)\n",
 		    __func__, error);
 		goto error;
 	}
 
-	device_printf(sc->sc_dev, "%s: tx_list=%p\n", __func__,
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: tx_list=%p\n", __func__,
 	    q->q_tx.rge_tx_list);
-	device_printf(sc->sc_dev, "%s: tx_list_map=%p\n", __func__,
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: tx_list_map=%p\n", __func__,
 	    q->q_tx.rge_tx_list_map);
 
 	/* Load the map for the TX ring. */
@@ -1600,7 +1601,7 @@ rge_allocmem(struct rge_softc *sc)
 	    BUS_DMA_NOWAIT);
 
 	if ((error != 0) || (q->q_tx.rge_tx_list_paddr == 0)) {
-		device_printf(sc->sc_dev, "%s: error (load tx_list.map) (%d)\n",
+		RGE_PRINT_ERROR(sc, "%s: error (load tx_list.map) (%d)\n",
 		    __func__, error);
 		goto error;
 	}
@@ -1610,7 +1611,7 @@ rge_allocmem(struct rge_softc *sc)
 		error = bus_dmamap_create(sc->sc_dmat_tx_buf,
 		    BUS_DMA_NOWAIT, &q->q_tx.rge_txq[i].txq_dmamap);
 		if (error) {
-			device_printf(sc->sc_dev,
+			RGE_PRINT_ERROR(sc,
 			    "can't create DMA map for TX (%d)\n", error);
 			goto error;
 		}
@@ -1620,8 +1621,8 @@ rge_allocmem(struct rge_softc *sc)
 	error = bus_dmamap_create(sc->sc_dmat, BUS_DMA_COHERENT,
 	    &q->q_rx.rge_rx_list_map);
 	if (error) {
-		device_printf(sc->sc_dev,
-		    "%s: error (create rx_list.map) (%d)\n", __func__, error);
+		RGE_PRINT_ERROR(sc, "%s: error (create rx_list.map) (%d)\n",
+		    __func__, error);
 		goto error;
 	}
 	error = bus_dmamem_alloc(sc->sc_dmat_rx_desc,
@@ -1629,15 +1630,14 @@ rge_allocmem(struct rge_softc *sc)
 	    BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT,
 	    &q->q_rx.rge_rx_list_map);
 	if (error) {
-		device_printf(sc->sc_dev,
-		    "%s: error (alloc rx_list.map) (%d)\n",
+		RGE_PRINT_ERROR(sc, "%s: error (alloc rx_list.map) (%d)\n",
 		    __func__, error);
 		goto error;
 	}
 
-	device_printf(sc->sc_dev, "%s: rx_list=%p\n", __func__,
+	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: rx_list=%p\n", __func__,
 	    q->q_rx.rge_rx_list);
-	device_printf(sc->sc_dev, "%s: rx_list_map=%p\n", __func__,
+	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: rx_list_map=%p\n", __func__,
 	    q->q_rx.rge_rx_list_map);
 
 	/* Load the map for the RX ring. */
@@ -1650,7 +1650,7 @@ rge_allocmem(struct rge_softc *sc)
 	    BUS_DMA_NOWAIT);
 
 	if ((error != 0) || (q->q_rx.rge_rx_list_paddr == 0)) {
-		device_printf(sc->sc_dev, "%s: error (load rx_list.map) (%d)\n",
+		RGE_PRINT_ERROR(sc, "%s: error (load rx_list.map) (%d)\n",
 		    __func__, error);
 		goto error;
 	}
@@ -1660,7 +1660,7 @@ rge_allocmem(struct rge_softc *sc)
 		error = bus_dmamap_create(sc->sc_dmat_rx_buf,
 		    BUS_DMA_NOWAIT, &q->q_rx.rge_rxq[i].rxq_dmamap);
 		if (error) {
-			device_printf(sc->sc_dev,
+			RGE_PRINT_ERROR(sc,
 			    "can't create DMA map for RX (%d)\n", error);
 			goto error;
 		}
@@ -1704,7 +1704,7 @@ rge_freemem(struct rge_softc *sc)
 			static bool do_warning = false;
 
 			if (do_warning == false) {
-				device_printf(sc->sc_dev,
+				RGE_PRINT_ERROR(sc,
 				    "%s: TX mbuf should've been freed!\n",
 				    __func__);
 				do_warning = true;
@@ -1857,7 +1857,9 @@ rge_newbuf(struct rge_queues *q)
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
-	device_printf(sc->sc_dev, "%s: [%d]: m=%p, phys=0x%jx len %ju, desc=0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
+	RGE_DPRINTF(sc, RGE_DEBUG_RECV_DESC,
+	    "%s: [%d]: m=%p, phys=0x%jx len %ju, "
+	    "desc=0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
 	    __func__,
 	    idx,
 	    m,
@@ -1908,7 +1910,7 @@ rge_fill_rx_ring(struct rge_queues *q)
 	prod = q->q_rx.rge_rxq_prodidx;
 	cons = q->q_rx.rge_rxq_considx;
 	count = rx_ring_space(q);
-	device_printf(sc->sc_dev, "%s: prod=%u, cons=%u, space=%u\n",
+	RGE_DPRINTF(sc, RGE_DEBUG_RECV_DESC,"%s: prod=%u, cons=%u, space=%u\n",
 	  __func__,
 	  prod, cons, count);
 
@@ -1955,7 +1957,7 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 
 	RGE_ASSERT_LOCKED(sc);
 
-	device_printf(sc->sc_dev, "%s; called\n", __func__);
+	RGE_DPRINTF(sc, RGE_DEBUG_INTR, "%s; called\n", __func__);
 
 	/* Note: if_re is POSTREAD/WRITE, rge is only POSTWRITE */
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
@@ -1970,7 +1972,7 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) == 0)
 			break;
 
-		device_printf(sc->sc_dev, "%s: idx %d\n", __func__, i);
+		RGE_DPRINTF(sc, RGE_DEBUG_INTR, "%s: idx %d\n", __func__, i);
 
 		/* get the current rx descriptor to check descriptor status */
 		cur_rx = &q->q_rx.rge_rx_list[i];
@@ -2173,8 +2175,7 @@ rge_reset(struct rge_softc *sc)
 				break;
 		}
 		if (i == 20) {
-			device_printf(sc->sc_dev,
-			    "failed to stop all requests\n");
+			RGE_PRINT_ERROR(sc, "failed to stop all requests\n");
 			return ETIMEDOUT;
 		}
 	} else
@@ -2207,7 +2208,7 @@ rge_reset(struct rge_softc *sc)
 			break;
 	}
 	if (i == RGE_TIMEOUT) {
-		device_printf(sc->sc_dev, "reset never completed!\n");
+		RGE_PRINT_ERROR(sc, "reset never completed!\n");
 		return ETIMEDOUT;
 	}
 
@@ -2558,7 +2559,7 @@ rge_phy_config(struct rge_softc *sc)
 		DELAY(1000);
 	}
 	if (i == 2500) {
-		device_printf(sc->sc_dev, "PHY reset failed\n");
+		RGE_PRINT_ERROR(sc, "PHY reset failed\n");
 		return (ETIMEDOUT);
 	}
 
@@ -3677,8 +3678,7 @@ rge_patch_phy_mcu(struct rge_softc *sc, int set)
 		DELAY(100);
 	}
 	if (i == 1000)
-		device_printf(sc->sc_dev,
-		    "timeout waiting to patch phy mcu\n");
+		RGE_PRINT_ERROR(sc, "timeout waiting to patch phy mcu\n");
 }
 
 static void
@@ -3715,7 +3715,7 @@ rge_config_imtype(struct rge_softc *sc, int imtype)
 		sc->rge_intrs = RGE_INTRS_TIMER;
 		break;
 	default:
-		device_printf(sc->sc_dev, "unknown imtype %d", imtype);
+		RGE_PRINT_ERROR(sc, "unknown imtype %d", imtype);
 	}
 }
 
@@ -3780,7 +3780,7 @@ rge_setup_intr(struct rge_softc *sc, int imtype)
 		rge_setup_sim_im(sc);
 		break;
 	default:
-		device_printf(sc->sc_dev, "unknown imtype %d", imtype);
+		RGE_PRINT_ERROR(sc, "unknown imtype %d", imtype);
 	}
 }
 

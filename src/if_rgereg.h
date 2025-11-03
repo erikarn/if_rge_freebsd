@@ -438,6 +438,8 @@ struct rge_softc {
 	int			rge_timerintr;
 #define RGE_IMTYPE_NONE		0
 #define RGE_IMTYPE_SIM		1
+
+	uint32_t		sc_debug;
 };
 
 /*

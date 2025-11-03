@@ -1973,6 +1973,8 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		q->q_rx.rge_tail = &q->q_rx.rge_head;
 
 		m_adj(m, -ETHER_CRC_LEN);
+		m->m_pkthdr.rcvif = sc->sc_ifp;
+		if_inc_counter(sc->sc_ifp, IFCOUNTER_IPACKETS, 1);
 
 		extsts = le32toh(cur_rx->hi_qword1.rx_qword4.rge_extsts);
 

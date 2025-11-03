@@ -59,6 +59,7 @@
 #include "if_rgereg.h"
 #include "if_rge_microcode.h"
 #include "if_rge_debug.h"
+#include "if_rge_sysctl.h"
 
 static int		rge_attach(device_t);
 static int		rge_detach(device_t);
@@ -477,6 +478,8 @@ rge_attach(device_t dev)
 		goto fail;
 	}
 
+	/* Attach sysctl nodes */
+	rge_sysctl_attach(sc);
 
 	/* Determine hardware revision */
 	hwrev = RGE_READ_4(sc, RGE_TXCFG) & RGE_TXCFG_HWREV;

@@ -1789,7 +1789,6 @@ rge_newbuf(struct rge_queues *q)
 	 * if we do not.
 	 */
 
-
 	/* Allocate single buffer backed mbuf of MCLBYTES */
 	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
 	if (m == NULL)
@@ -1803,13 +1802,13 @@ rge_newbuf(struct rge_queues *q)
 	rxmap = rxq->rxq_dmamap;
 
 	nsegs = 1;
-	if (bus_dmamap_load_mbuf_sg(sc->sc_dmat, rxmap, m, seg, &nsegs,
+	if (bus_dmamap_load_mbuf_sg(sc->sc_dmat_rx_buf, rxmap, m, seg, &nsegs,
 	    BUS_DMA_NOWAIT)) {
 		m_freem(m);
 		return (ENOBUFS);
 	}
 
-	bus_dmamap_sync(sc->sc_dmat, rxmap, BUS_DMASYNC_PREREAD);
+	bus_dmamap_sync(sc->sc_dmat_rx_buf, rxmap, BUS_DMASYNC_PREREAD);
 
 	/* Map the segments into RX descriptors. */
 	r = &q->q_rx.rge_rx_list[idx];
@@ -1824,17 +1823,33 @@ rge_newbuf(struct rge_queues *q)
 	r->hi_qword1.rx_qword4.rge_extsts = htole32(0);
 	r->hi_qword0.rge_addr = htole64(seg[0].ds_addr);
 
-	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
+	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_PREWRITE);
 
-	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
+	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_POSTWRITE);
 	cmdsts |= RGE_RDCMDSTS_OWN;
 	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(cmdsts);
-	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
+	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
+	device_printf(sc->sc_dev, "%s: [%d]: m=%p, phys=0x%jx len %ju, desc=0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
+	    __func__,
+	    q->q_rx.rge_rxq_prodidx,
+	    m,
+	    (uintmax_t) seg[0].ds_addr,
+	    (uintmax_t) seg[0].ds_len,
+	    ((uint32_t *) r)[0],
+	    ((uint32_t *) r)[1],
+	    ((uint32_t *) r)[2],
+	    ((uint32_t *) r)[3],
+	    ((uint32_t *) r)[4],
+	    ((uint32_t *) r)[5],
+	    ((uint32_t *) r)[6],
+	    ((uint32_t *) r)[7]);
+
 	q->q_rx.rge_rxq_prodidx = RGE_NEXT_RX_DESC(idx);
+
 
 	return (0);
 }
@@ -1883,7 +1898,7 @@ rge_tx_list_init(struct rge_queues *q)
 	d = &q->q_tx.rge_tx_list[RGE_TX_LIST_CNT - 1];
 	d->rge_cmdsts = htole32(RGE_TDCMDSTS_EOR);
 
-	bus_dmamap_sync(sc->sc_dmat, q->q_tx.rge_tx_list_map,
+	bus_dmamap_sync(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	q->q_tx.rge_txq_prodidx = q->q_tx.rge_txq_considx = 0;
@@ -1899,12 +1914,14 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 	uint32_t rxstat, extsts;
 	int i, mlen, rx = 0;
 	int cons;
-	int maxpkt = 32;
+	int maxpkt = 8;
 
 	RGE_ASSERT_LOCKED(sc);
 
+	device_printf(sc->sc_dev, "%s; called\n", __func__);
+
 	/* Note: if_re is POSTREAD/WRITE, rge is only POSTWRITE */
-	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
+	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 	/*
@@ -1916,6 +1933,8 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) == 0)
 			break;
 
+		device_printf(sc->sc_dev, "%s: idx %d\n", __func__, i);
+
 		/* get the current rx descriptor to check descriptor status */
 		cur_rx = &q->q_rx.rge_rx_list[i];
 		rxstat = le32toh(cur_rx->hi_qword1.rx_qword4.rge_cmdsts);
@@ -1926,9 +1945,9 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		/* Get the current rx buffer, sync */
 		rxq = &q->q_rx.rge_rxq[i];
 		/* XXX double check */
-		bus_dmamap_sync(sc->sc_dmat, rxq->rxq_dmamap,
+		bus_dmamap_sync(sc->sc_dmat_rx_buf, rxq->rxq_dmamap,
 		    BUS_DMASYNC_POSTREAD);
-		bus_dmamap_unload(sc->sc_dmat, rxq->rxq_dmamap);
+		bus_dmamap_unload(sc->sc_dmat_rx_buf, rxq->rxq_dmamap);
 		m = rxq->rxq_mbuf;
 		rxq->rxq_mbuf = NULL;
 
@@ -2018,7 +2037,7 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		return (0);
 
 	/* XXX check */
-	bus_dmamap_sync(sc->sc_dmat, q->q_rx.rge_rx_list_map,
+	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_POSTWRITE);
 
 	/* Update the consumer index, refill the RX ring */
@@ -2055,9 +2074,9 @@ rge_txeof(struct rge_queues *q)
 			break;
 		}
 
-		bus_dmamap_sync(sc->sc_dmat, txq->txq_dmamap, 0,
+		bus_dmamap_sync(sc->sc_dmat_tx_buf, txq->txq_dmamap, 0,
 		    txq->txq_dmamap->dm_mapsize, BUS_DMASYNC_POSTWRITE);
-		bus_dmamap_unload(sc->sc_dmat, txq->txq_dmamap);
+		bus_dmamap_unload(sc->sc_dmat_tx_buf, txq->txq_dmamap);
 		m_freem(txq->txq_mbuf);
 		txq->txq_mbuf = NULL;
 

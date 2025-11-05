@@ -896,10 +896,18 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 		if (i == txmap->dm_nsegs - 1)
 			cmdsts |= RGE_TDCMDSTS_EOF;
 
+		/*
+		 * Note: vendor driver puts wmb() after opts2/extsts,
+		 * before opts1/status.
+		 *
+		 * See the other place I have this comment for more
+		 * information.
+		 */
 		d = &q->q_tx.rge_tx_list[cur];
-		d->rge_cmdsts = htole32(cmdsts);
-		d->rge_extsts = htole32(cflags);
 		d->rge_addr = htole64(txmap->dm_segs[i].ds_addr);
+		d->rge_extsts = htole32(cflags);
+		wmb();
+		d->rge_cmdsts = htole32(cmdsts);
 	}
 
 	/* Update info of TX queue and descriptors. */
@@ -914,10 +922,23 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 	if (txmap->dm_nsegs == 1)
 		cmdsts |= RGE_TDCMDSTS_EOF;
 
+	/*
+	 * Note: vendor driver puts wmb() after opts2/extsts,
+	 * before opts1/status.
+	 *
+	 * It does this:
+	 * - set rge_addr
+	 * - set extsts
+	 * - wmb
+	 * - set status - at this point it's owned by the hardware
+	 *
+	 */
 	d = &q->q_tx.rge_tx_list[idx];
-	d->rge_cmdsts = htole32(cmdsts);
-	d->rge_extsts = htole32(cflags);
 	d->rge_addr = htole64(txmap->dm_segs[0].ds_addr);
+	d->rge_extsts = htole32(cflags);
+	wmb();
+	d->rge_cmdsts = htole32(cmdsts);
+	wmb();
 
 	if (cur >= idx) {
 		rge_tx_list_sync(sc, q, idx, txmap->dm_nsegs,
@@ -934,6 +955,7 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 	rge_tx_list_sync(sc, q, idx, 1, BUS_DMASYNC_POSTWRITE);
 	d->rge_cmdsts = htole32(cmdsts);
 	rge_tx_list_sync(sc, q, idx, 1, BUS_DMASYNC_PREWRITE);
+	wmb();
 
 	return (txmap->dm_nsegs);
 }
@@ -2004,6 +2026,7 @@ rge_tx_list_init(struct rge_queues *q)
 
 	bus_dmamap_sync(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
+	wmb();
 
 	q->q_tx.rge_txq_prodidx = q->q_tx.rge_txq_considx = 0;
 

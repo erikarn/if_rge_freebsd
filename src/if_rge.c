@@ -447,9 +447,9 @@ rge_attach(device_t dev)
 	    0, /* boundary */
 	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
 	    NULL,
-	    0x3ffff, /* XXX maxsize */
-	    64, /* XXX nsegments */
-	    0x3ffff, /* XXX maxsegsize */
+	    RGE_RX_LIST_SZ, /* XXX maxsize */
+	    1, /* XXX nsegments */
+	    RGE_RX_LIST_SZ, /* XXX maxsegsize */
 	    BUS_DMA_ALLOCNOW, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_rx_desc);
@@ -1581,7 +1581,8 @@ rge_allocmem(struct rge_softc *sc)
 	}
 	error = bus_dmamem_alloc(sc->sc_dmat_tx_desc,
 	    (void **) &q->q_tx.rge_tx_list,
-	        BUS_DMA_NOWAIT | BUS_DMA_ZERO| BUS_DMA_COHERENT,
+	        BUS_DMA_NOWAIT | BUS_DMA_ZERO| BUS_DMA_COHERENT
+		| BUS_DMA_NOCACHE,
 	    &q->q_tx.rge_tx_list_map);
 	if (error) {
 		RGE_PRINT_ERROR(sc, "%s: error (alloc tx_list.map) (%d)\n",
@@ -1630,7 +1631,8 @@ rge_allocmem(struct rge_softc *sc)
 	}
 	error = bus_dmamem_alloc(sc->sc_dmat_rx_desc,
 	    (void **) &q->q_rx.rge_rx_list,
-	    BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT,
+	    BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT
+	    |  BUS_DMA_NOCACHE,
 	    &q->q_rx.rge_rx_list_map);
 	if (error) {
 		RGE_PRINT_ERROR(sc, "%s: error (alloc rx_list.map) (%d)\n",
@@ -1866,40 +1868,20 @@ rge_newbuf(struct rge_queues *q)
 	if (idx == RGE_RX_LIST_CNT - 1)
 		cmdsts |= RGE_RDCMDSTS_EOR;
 
+	/* Blank out the slot, ensure the hardware sees it */
+	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(0);
+	r->hi_qword1.rx_qword4.rge_extsts = htole32(0);
+	r->hi_qword0.rge_addr = htole32(0);
+	wmb();
+
+	/*
+	 * Configure the DMA pointer and config, but don't hand
+	 * it yet to the hardware.
+	 */
 	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(cmdsts);
 	r->hi_qword1.rx_qword4.rge_extsts = htole32(0);
 	r->hi_qword0.rge_addr = htole64(seg[0].ds_addr);
-
-	/*
-	 * This dance looks like it's designed to ensure the hardware
-	 * sees the DMA descriptor flags /first/ before it sees the
-	 * RGE_RDCMDSTS_OWN, which signifies to the hardware that it
-	 * owns the buffer.  If the hardware hits a descriptor slot
-	 * with RGE_RDCMDSTS_OWN = 0, it stops on this descriptor
-	 * and will re-read this descriptor slot until it's ready
-	 * to continue.  There's no doorbell register being poked to
-	 * signal RX DMA can continue, it just keeps retrying.
-	 *
-	 * However, this ported as-is from OpenBSD is currently problematic
-	 * because it supports doing /partial/ syncs (ie, individual descriptor
-	 * ring slots) versus the whole range that FreeBSD does.
-	 *
-	 * This has the unfortunate side-effect that it's constantly
-	 * doing flushes and bounce buffer copies of the whole region.
-	 * It's likely fine on x86 (and could be optimised to be a single
-	 * pre and post update operation around multiple ring refills.)
-	 *
-	 * However! I hope for the descriptor rings it is NOT doing bounce
-	 * buffer copies or flush/invalidate because the hardware could
-	 * be updating things from underneath us.  When using realtek
-	 * NICs on ARM/MIPS hardware without DMA coherency the only real
-	 * way to get this to work right is to put the descriptor ring
-	 * in non-cached memory.
-	 *
-	 * In any case:
-	 *
-	 * XXX TODO: this all needs validating!
-	 */
+	wmb();
 
 	/*
 	 * This says "Do sync required after update of host memory
@@ -1909,16 +1891,7 @@ rge_newbuf(struct rge_queues *q)
 	 */
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_PREWRITE);
-
-	/*
-	 * This says "Do any sync required after device access to host
-	 * memory."  Since we've not done any changes ourselves,
-	 * this is to hopefully ensure we get the most up to date
-	 * version of whatever the hardware may have just squeezed an
-	 * update into since.
-	 */
-	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
-	    BUS_DMASYNC_POSTWRITE);
+	wmb();
 
 	/*
 	 * Mark the specific descriptor slot as "this descriptor is now
@@ -1935,6 +1908,7 @@ rge_newbuf(struct rge_queues *q)
 	 */
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
+	wmb();
 
 	/*
 	 * At this point the hope is the whole ring is now updated and
@@ -1976,6 +1950,9 @@ rge_rx_list_init(struct rge_queues *q)
 	q->q_rx.rge_rxq_prodidx = q->q_rx.rge_rxq_considx = 0;
 	q->q_rx.rge_head = NULL;
 	q->q_rx.rge_tail = &q->q_rx.rge_head;
+
+	RGE_DPRINTF(q->q_sc, RGE_DEBUG_SETUP, "%s: rx_list=%p\n", __func__,
+	    q->q_rx.rge_rx_list);
 
 	rge_fill_rx_ring(q);
 }
@@ -2029,6 +2006,9 @@ rge_tx_list_init(struct rge_queues *q)
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	q->q_tx.rge_txq_prodidx = q->q_tx.rge_txq_considx = 0;
+
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: rx_list=%p\n", __func__,
+	    q->q_tx.rge_tx_list);
 }
 
 int
@@ -2069,12 +2049,15 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 			break;
 		}
 
+		/* Ensure everything else has been DMAed */
+		rmb();
+
 		/* Get the current rx buffer, sync */
 		rxq = &q->q_rx.rge_rxq[i];
 
 		/* Ensure any device updates are now visible in host memory */
 		bus_dmamap_sync(sc->sc_dmat_rx_buf, rxq->rxq_dmamap,
-		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
+		    BUS_DMASYNC_POSTREAD);
 
 		/* Unload the DMA map, we are done with it here */
 		bus_dmamap_unload(sc->sc_dmat_rx_buf, rxq->rxq_dmamap);
@@ -2099,6 +2082,11 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		    ((uint32_t *) cur_rx)[5],
 		    ((uint32_t *) cur_rx)[6],
 		    ((uint32_t *) cur_rx)[7]);
+
+		/*
+		 * TODO: strip out the multi-frame RX for now; just
+		 * expect SOF + EOF to be set, error out if not.
+		 */
 
 		if ((rxstat & RGE_RDCMDSTS_SOF) != 0) {
 			if (q->q_rx.rge_head != NULL) {
@@ -2188,7 +2176,8 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 	 * visible to the host before we continue.
 	 */
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
-	    BUS_DMASYNC_POSTWRITE | BUS_DMASYNC_POSTREAD);
+	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
+	wmb();
 
 	/* Update the consumer index, refill the RX ring */
 	q->q_rx.rge_rxq_considx = i;

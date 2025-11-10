@@ -391,12 +391,12 @@ rge_attach(device_t dev)
 
 	/* Allocate top level bus DMA tag */
 	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1, 0,
-	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
 	    NULL,
-	    0x00ffffff, /* XXX maxsize */
-	    64, /* XXX nsegments */
-	    0x00ffffff, /* XXX maxsegsize */
-	    BUS_DMA_ALLOCNOW, /* flags */
+	    BUS_SPACE_MAXADDR, /* maxsize */
+	    0, /* nsegments */
+	    BUS_SPACE_MAXADDR, /* maxsegsize */
+	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat);
 	if (error) {
@@ -411,10 +411,10 @@ rge_attach(device_t dev)
 	    0, /* boundary */
 	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
 	    NULL,
-	    0x3ffff, /* XXX maxsize */
-	    64, /* XXX nsegments */
-	    0x3ffff, /* XXX maxsegsize */
-	    BUS_DMA_ALLOCNOW, /* flags */
+	    RGE_TX_LIST_SZ, /* maxsize */
+	    1, /* nsegments */
+	    RGE_TX_LIST_SZ, /* maxsegsize */
+	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_tx_desc);
 	if (error) {
@@ -427,12 +427,12 @@ rge_attach(device_t dev)
 	error = bus_dma_tag_create(sc->sc_dmat,
 	    1, /* alignment */
 	    0, /* boundary */
-	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
 	    NULL,
-	    RGE_JUMBO_FRAMELEN, /* XXX maxsize */
-	    RGE_TX_NSEGS, /* XXX nsegments */
-	    RGE_JUMBO_FRAMELEN, /* XXX maxsegsize */
-	    BUS_DMA_ALLOCNOW, /* flags */
+	    RGE_JUMBO_FRAMELEN, /* maxsize */
+	    RGE_TX_NSEGS, /* nsegments */
+	    RGE_JUMBO_FRAMELEN, /* maxsegsize */
+	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_tx_buf);
 	if (error) {
@@ -450,7 +450,7 @@ rge_attach(device_t dev)
 	    RGE_RX_LIST_SZ, /* XXX maxsize */
 	    1, /* XXX nsegments */
 	    RGE_RX_LIST_SZ, /* XXX maxsegsize */
-	    BUS_DMA_ALLOCNOW, /* flags */
+	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_rx_desc);
 	if (error) {
@@ -463,12 +463,12 @@ rge_attach(device_t dev)
 	error = bus_dma_tag_create(sc->sc_dmat,
 	    1, /* alignment */
 	    0, /* boundary */
-	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
 	    NULL,
-	    0x3ffff, /* XXX maxsize */
-	    64, /* XXX nsegments */
-	    0x3ffff, /* XXX maxsegsize */
-	    BUS_DMA_ALLOCNOW, /* flags */
+	    MCLBYTES, /* maxsize */
+	    1, /* nsegments */
+	    MCLBYTES, /* maxsegsize */
+	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_rx_buf);
 	if (error) {

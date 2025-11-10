@@ -202,8 +202,18 @@
 #define RGE_CPLUSCMD_RXCSUM	0x0020
 
 #define RGE_TX_NSEGS		32
-#define RGE_TX_LIST_CNT		16 /* 1024 */
-#define RGE_RX_LIST_CNT		16 /* 1024 */
+
+/*
+ * Note: the hardware supports 1024 TX/RX descriptor entries
+ * in a ring.  If you feed it less - like I was (16, 128)
+ * during testing, then I was seeing the DMA engine write
+ * packets to old addresses.  Now, I don't know if that's
+ * the RX path busdma / descriptor handling issue or hardware
+ * issue, but at 1024 packets it doesn't seem to do that.
+ */
+#define RGE_TX_LIST_CNT		1024
+#define RGE_RX_LIST_CNT		1024
+
 #define RGE_ALIGN		256
 #define RGE_TX_LIST_SZ		(sizeof(struct rge_tx_desc) * RGE_TX_LIST_CNT)
 #define RGE_RX_LIST_SZ		(sizeof(struct rge_rx_desc) * RGE_RX_LIST_CNT)

@@ -1705,7 +1705,6 @@ rge_freemem(struct rge_softc *sc)
 	if (q->q_tx.rge_tx_list != NULL)
 		bus_dmamem_free(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list,
 		    q->q_tx.rge_tx_list_map);
-	bus_dmamap_destroy(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map);
 	memset(&q->q_tx, 0, sizeof(q->q_tx));
 
 	/* TX buf */
@@ -1744,7 +1743,6 @@ rge_freemem(struct rge_softc *sc)
 	if (q->q_rx.rge_rx_list != 0)
 		bus_dmamem_free(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list,
 		    q->q_rx.rge_rx_list_map);
-	bus_dmamap_destroy(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map);
 	memset(&q->q_rx, 0, sizeof(q->q_tx));
 
 	/* RX buf */

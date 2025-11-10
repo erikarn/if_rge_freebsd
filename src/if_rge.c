@@ -1845,7 +1845,6 @@ rge_newbuf(struct rge_queues *q)
 		return (ENOBUFS);
 
 	m->m_len = m->m_pkthdr.len = MCLBYTES;
-//	m_adj(m, ETHER_ALIGN);
 
 	nsegs = 1;
 	if (bus_dmamap_load_mbuf_sg(sc->sc_dmat_rx_buf, rxmap, m, seg, &nsegs,
@@ -1870,14 +1869,14 @@ rge_newbuf(struct rge_queues *q)
 
 	rxq->rxq_mbuf = m;
 
-	cmdsts = seg[0].ds_len;
+	cmdsts = seg[0].ds_len; /* XXX how big is this field in the descriptor? */
 	if (idx == RGE_RX_LIST_CNT - 1)
 		cmdsts |= RGE_RDCMDSTS_EOR;
 
 	/* Blank out the slot, ensure the hardware sees it */
 	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(0);
 	r->hi_qword1.rx_qword4.rge_extsts = htole32(0);
-	r->hi_qword0.rge_addr = htole32(0);
+	r->hi_qword0.rge_addr = htole64(0);
 	wmb();
 
 	/*

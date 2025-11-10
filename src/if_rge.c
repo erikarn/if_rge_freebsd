@@ -1594,13 +1594,6 @@ rge_allocmem(struct rge_softc *sc)
 	RGE_ASSERT_UNLOCKED(sc);
 
 	/* Allocate DMA'able memory for the TX ring. */
-	error = bus_dmamap_create(sc->sc_dmat_tx_desc, BUS_DMA_COHERENT,
-	    &q->q_tx.rge_tx_list_map);
-	if (error) {
-		RGE_PRINT_ERROR(sc, "%s: error (create tx_list.map) (%d)\n",
-		    __func__, error);
-		goto error;
-	}
 	error = bus_dmamem_alloc(sc->sc_dmat_tx_desc,
 	    (void **) &q->q_tx.rge_tx_list,
 	        BUS_DMA_NOWAIT | BUS_DMA_ZERO| BUS_DMA_COHERENT
@@ -1620,7 +1613,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Load the map for the TX ring. */
 	error = bus_dmamap_load(sc->sc_dmat_tx_desc,
 	    q->q_tx.rge_tx_list_map,
-	    &q->q_tx.rge_tx_list,
+	    q->q_tx.rge_tx_list,
 	    RGE_TX_LIST_SZ,
 	    rge_dma_load_cb,
 	    (void *) &q->q_tx.rge_tx_list_paddr,
@@ -1644,13 +1637,6 @@ rge_allocmem(struct rge_softc *sc)
 	}
 
 	/* Allocate DMA'able memory for the RX ring. */
-	error = bus_dmamap_create(sc->sc_dmat_rx_desc, BUS_DMA_COHERENT,
-	    &q->q_rx.rge_rx_list_map);
-	if (error) {
-		RGE_PRINT_ERROR(sc, "%s: error (create rx_list.map) (%d)\n",
-		    __func__, error);
-		goto error;
-	}
 	error = bus_dmamem_alloc(sc->sc_dmat_rx_desc,
 	    (void **) &q->q_rx.rge_rx_list,
 	    BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT

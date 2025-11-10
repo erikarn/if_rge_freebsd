@@ -1596,7 +1596,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Allocate DMA'able memory for the TX ring. */
 	error = bus_dmamem_alloc(sc->sc_dmat_tx_desc,
 	    (void **) &q->q_tx.rge_tx_list,
-	        BUS_DMA_NOWAIT | BUS_DMA_ZERO| BUS_DMA_COHERENT
+	        BUS_DMA_WAITOK | BUS_DMA_ZERO| BUS_DMA_COHERENT
 		| BUS_DMA_NOCACHE,
 	    &q->q_tx.rge_tx_list_map);
 	if (error) {
@@ -1628,7 +1628,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Create DMA maps for TX buffers. */
 	for (i = 0; i < RGE_TX_LIST_CNT; i++) {
 		error = bus_dmamap_create(sc->sc_dmat_tx_buf,
-		    BUS_DMA_NOWAIT, &q->q_tx.rge_txq[i].txq_dmamap);
+		    0, &q->q_tx.rge_txq[i].txq_dmamap);
 		if (error) {
 			RGE_PRINT_ERROR(sc,
 			    "can't create DMA map for TX (%d)\n", error);
@@ -1639,7 +1639,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Allocate DMA'able memory for the RX ring. */
 	error = bus_dmamem_alloc(sc->sc_dmat_rx_desc,
 	    (void **) &q->q_rx.rge_rx_list,
-	    BUS_DMA_NOWAIT | BUS_DMA_ZERO | BUS_DMA_COHERENT
+	    BUS_DMA_WAITOK | BUS_DMA_ZERO | BUS_DMA_COHERENT
 	    |  BUS_DMA_NOCACHE,
 	    &q->q_rx.rge_rx_list_map);
 	if (error) {
@@ -1671,7 +1671,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Create DMA maps for RX buffers. */
 	for (i = 0; i < RGE_RX_LIST_CNT; i++) {
 		error = bus_dmamap_create(sc->sc_dmat_rx_buf,
-		    BUS_DMA_NOWAIT, &q->q_rx.rge_rxq[i].rxq_dmamap);
+		    0, &q->q_rx.rge_rxq[i].rxq_dmamap);
 		if (error) {
 			RGE_PRINT_ERROR(sc,
 			    "can't create DMA map for RX (%d)\n", error);

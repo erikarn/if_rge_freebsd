@@ -1965,7 +1965,11 @@ rge_rx_list_init(struct rge_queues *q)
 /**
  * @brief Fill / refill the RX ring as needed.
  *
- * This will fill the RX ring with frames from prodidx until it is full.
+ * Refill the RX ring with one less than the total descriptors needed.
+ * This makes the check in rge_rxeof() easier - it can just check
+ * descriptors from cons -> prod and bail once it hits prod.
+ * If the whole ring is filled then cons == prod, and that shortcut
+ * fails.
  *
  * This must be called with the driver lock held.
  */
@@ -1980,9 +1984,14 @@ rge_fill_rx_ring(struct rge_queues *q)
 	prod = q->q_rx.rge_rxq_prodidx;
 	cons = q->q_rx.rge_rxq_considx;
 	count = rx_ring_space(q);
-	RGE_DPRINTF(sc, RGE_DEBUG_RECV_DESC,"%s: prod=%u, cons=%u, space=%u\n",
-	  __func__,
-	  prod, cons, count);
+
+	/* Fill to count-1; bail if we don't have the space */
+	if (count <= 1)
+		return;
+	count--;
+
+	RGE_DPRINTF(sc, RGE_DEBUG_RECV_DESC, "%s: prod=%u, cons=%u, space=%u\n",
+	  __func__, prod, cons, count);
 
 	for (i = 0; i < count; i++) {
 		if (rge_newbuf(q))
@@ -2026,8 +2035,8 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 	struct rge_rxq *rxq;
 	uint32_t rxstat, extsts;
 	int i, mlen, rx = 0;
-	int cons;
-	int maxpkt = 8;
+	int cons, prod;
+	int maxpkt = 16; /* XXX TODO: make this a tunable */
 
 	RGE_ASSERT_LOCKED(sc);
 
@@ -2037,16 +2046,18 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
+	prod = q->q_rx.rge_rxq_prodidx;
+
 	/*
-	 * Note: this isn't the best loop invariant; need to revisit this.
+	 * Loop around until we've run out of active descriptors to check
+	 * or maxpkt has been reached.
 	 */
 	for (i = cons = q->q_rx.rge_rxq_considx;
-	    maxpkt > 0; i = RGE_NEXT_RX_DESC(i)) {
+	    maxpkt > 0 && i != prod;
+	    i = RGE_NEXT_RX_DESC(i)) {
 		/* break out of loop if we're not running */
 		if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) == 0)
 			break;
-
-		RGE_DPRINTF(sc, RGE_DEBUG_INTR, "%s: idx %d\n", __func__, i);
 
 		/* get the current rx descriptor to check descriptor status */
 		cur_rx = &q->q_rx.rge_rx_list[i];
@@ -2172,6 +2183,8 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		}
 
 		mbufq_enqueue(mq, m);
+
+		maxpkt--;
 	}
 
 	if (!rx)

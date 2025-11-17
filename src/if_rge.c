@@ -87,9 +87,7 @@ static void	rge_rx_list_init(struct rge_queues *);
 static void	rge_tx_list_init(struct rge_queues *);
 static void	rge_fill_rx_ring(struct rge_queues *);
 static int	rge_rxeof(struct rge_queues *, struct mbufq *);
-#if 0
-int		rge_txeof(struct rge_queues *);
-#endif
+static int	rge_txeof(struct rge_queues *);
 static int		rge_reset(struct rge_softc *);
 static void		rge_iff_locked(struct rge_softc *);
 static int		rge_chipinit(struct rge_softc *);
@@ -763,9 +761,7 @@ rge_intr_msi(void *arg)
 
 		(void) q;
 		rv |= rge_rxeof(q, &rx_mq);
-#if 0
 		rv |= rge_txeof(q);
-#endif
 
 		if (status & RGE_ISR_SYSTEM_ERR) {
 			/* XXX TODO: error log? count? */
@@ -788,9 +784,7 @@ rge_intr_msi(void *arg)
 			 * masks.
 			 */
 			rge_rxeof(q, &rx_mq);
-#if 0
 			rge_txeof(q);
-#endif
 		} else
 			RGE_WRITE_4(sc, RGE_TIMERCNT, 1);
 	} else if (rv) {
@@ -814,56 +808,68 @@ done:
 	(void) claimed;
 }
 
-#if 0
 static inline void
 rge_tx_list_sync(struct rge_softc *sc, struct rge_queues *q,
     unsigned int idx, unsigned int len, int ops)
 {
-	bus_dmamap_sync(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map,
-	    idx * sizeof(struct rge_tx_desc), len * sizeof(struct rge_tx_desc),
-	    ops);
+	bus_dmamap_sync(sc->sc_dmat_tx_desc, q->q_tx.rge_tx_list_map, ops);
 }
 
+/**
+ * @brief Queue the given mbuf at the given TX slot index for transmit.
+ *
+ * If the frame couldn't be enqueued then 0 is returned.
+ * The caller needs to handle that and free/re-queue the mbuf as required.
+ *
+ * Note that this doesn't actually kick-start the transmit itself;
+ * see rge_txstart() for the register to poke to start transmit.
+ *
+ * This must be called with the driver lock held.
+ *
+ * @param sc	driver softc
+ * @param q	TX queue ring
+ * @param m	mbuf to enqueue
+ * @returns	if the mbuf is enqueued, it's consumed here and the number of
+ * 		TX descriptors used is returned; if there's an error then
+ * 		0 is returned and the mbuf isn't consumed.
+ */
 static int
-rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
+rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 {
-	struct rge_softc *sc = q->q_sc;
 	struct rge_tx_desc *d = NULL;
 	struct rge_txq *txq;
 	bus_dmamap_t txmap;
 	uint32_t cmdsts, cflags = 0;
 	int cur, error, i;
-#if NBPFILTER > 0
-	caddr_t if_bpf;
-#endif
+	bus_dma_segment_t seg[RGE_TX_NSEGS];
+	int nsegs;
+
+	RGE_ASSERT_LOCKED(sc);
 
 	txq = &q->q_tx.rge_txq[idx];
 	txmap = txq->txq_dmamap;
 
-	error = bus_dmamap_load_mbuf(sc->sc_dmat_tx_buf, txmap, m, BUS_DMA_NOWAIT);
+	nsegs = RGE_TX_NSEGS;
+	error = bus_dmamap_load_mbuf_sg(sc->sc_dmat_tx_buf, txmap, m,
+	    seg, &nsegs, BUS_DMA_NOWAIT);
+
 	switch (error) {
 	case 0:
 		break;
 	case EFBIG: /* mbuf chain is too fragmented */
-		if (m_defrag(m, M_DONTWAIT) == 0 &&
-		    bus_dmamap_load_mbuf(sc->sc_dmat_tx_buf, txmap, m,
-		    BUS_DMA_NOWAIT) == 0)
+		nsegs = RGE_TX_NSEGS;
+		if (m_defrag(m, M_NOWAIT) == 0 &&
+		    bus_dmamap_load_mbuf_sg(sc->sc_dmat_tx_buf, txmap, m,
+		    seg, &nsegs, BUS_DMA_NOWAIT) == 0)
 			break;
-
 		/* FALLTHROUGH */
 	default:
 		return (0);
 	}
 
-#if NBPFILTER > 0
-	if_bpf = READ_ONCE(ifp->if_bpf);
-	if (if_bpf)
-		bpf_mtap_ether(if_bpf, m, BPF_DIRECTION_OUT);
-#endif
+	bus_dmamap_sync(sc->sc_dmat_tx_desc, txmap, BUS_DMASYNC_PREWRITE);
 
-	bus_dmamap_sync(sc->sc_dmat_tx_desc, txmap, 0, txmap->dm_mapsize,
-	    BUS_DMASYNC_PREWRITE);
-
+#if 0
 	/*
 	 * Set RGE_TDEXTSTS_IPCSUM if any checksum offloading is requested.
 	 * Otherwise, RGE_TDEXTSTS_TCPCSUM / RGE_TDEXTSTS_UDPCSUM does not
@@ -877,23 +883,26 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 		if (m->m_pkthdr.csum_flags & M_UDP_CSUM_OUT)
 			cflags |= RGE_TDEXTSTS_UDPCSUM;
 	}
+#endif
 
+#if 0
 	/* Set up hardware VLAN tagging. */
 #if NVLAN > 0
 	if (m->m_flags & M_VLANTAG)
 		cflags |= swap16(m->m_pkthdr.ether_vtag) | RGE_TDEXTSTS_VTAG;
 #endif
+#endif
 
 	cur = idx;
-	for (i = 1; i < txmap->dm_nsegs; i++) {
+	for (i = 1; i < nsegs; i++) {
 		cur = RGE_NEXT_TX_DESC(cur);
 
 		cmdsts = RGE_TDCMDSTS_OWN;
-		cmdsts |= txmap->dm_segs[i].ds_len;
+		cmdsts |= seg[i].ds_len;
 
 		if (cur == RGE_TX_LIST_CNT - 1)
 			cmdsts |= RGE_TDCMDSTS_EOR;
-		if (i == txmap->dm_nsegs - 1)
+		if (i == nsegs - 1)
 			cmdsts |= RGE_TDCMDSTS_EOF;
 
 		/*
@@ -904,7 +913,7 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 		 * information.
 		 */
 		d = &q->q_tx.rge_tx_list[cur];
-		d->rge_addr = htole64(txmap->dm_segs[i].ds_addr);
+		d->rge_addr = htole64(seg[i].ds_addr);
 		d->rge_extsts = htole32(cflags);
 		wmb();
 		d->rge_cmdsts = htole32(cmdsts);
@@ -915,11 +924,11 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 	txq->txq_descidx = cur;
 
 	cmdsts = RGE_TDCMDSTS_SOF;
-	cmdsts |= txmap->dm_segs[0].ds_len;
+	cmdsts |= seg[0].ds_len;
 
 	if (idx == RGE_TX_LIST_CNT - 1)
 		cmdsts |= RGE_TDCMDSTS_EOR;
-	if (txmap->dm_nsegs == 1)
+	if (nsegs == 1)
 		cmdsts |= RGE_TDCMDSTS_EOF;
 
 	/*
@@ -934,14 +943,14 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 	 *
 	 */
 	d = &q->q_tx.rge_tx_list[idx];
-	d->rge_addr = htole64(txmap->dm_segs[0].ds_addr);
+	d->rge_addr = htole64(seg[0].ds_addr);
 	d->rge_extsts = htole32(cflags);
 	wmb();
 	d->rge_cmdsts = htole32(cmdsts);
 	wmb();
 
 	if (cur >= idx) {
-		rge_tx_list_sync(sc, q, idx, txmap->dm_nsegs,
+		rge_tx_list_sync(sc, q, idx, nsegs,
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 	} else {
 		rge_tx_list_sync(sc, q, idx, RGE_TX_LIST_CNT - idx,
@@ -957,9 +966,8 @@ rge_encap(struct ifnet *ifp, struct rge_queues *q, struct mbuf *m, int idx)
 	rge_tx_list_sync(sc, q, idx, 1, BUS_DMASYNC_PREWRITE);
 	wmb();
 
-	return (txmap->dm_nsegs);
+	return (nsegs);
 }
-#endif
 
 static int
 rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
@@ -1012,6 +1020,14 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 }
 
 #if 0
+/*
+ * This is the OpenBSD transmit path.
+ *
+ * Note it's not queuing until the TX ring is full;
+ * it leaves 1 transmit slot free so the "is it full?"
+ * logic works correctly (and maybe the hardware will
+ * appreciate it too.)
+ */
 void
 rge_start(struct ifqueue *ifq)
 {
@@ -1090,6 +1106,16 @@ rge_qflush_if(if_t ifp)
 	RGE_PRINT_TODO(sc, "%s: called!\n", __func__);
 }
 
+/**
+ * @brief Transmit the given frame to the hardware.
+ *
+ * This routine is called by the network stack to send
+ * a frame to the device.
+ *
+ * For now we simply direct dispatch this frame to the
+ * hardware (and thus avoid maintaining our own internal
+ * queue)
+ */
 static int
 rge_transmit_if(if_t ifp, struct mbuf *m)
 {
@@ -2205,12 +2231,11 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 	return (1);
 }
 
-#if 0
 int
 rge_txeof(struct rge_queues *q)
 {
 	struct rge_softc *sc = q->q_sc;
-	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
+	struct ifnet *ifp = sc->sc_ifp;
 	struct rge_txq *txq;
 	uint32_t txstat;
 	int cons, prod, cur, idx;
@@ -2227,22 +2252,22 @@ rge_txeof(struct rge_queues *q)
 		rge_tx_list_sync(sc, q, cur, 1, BUS_DMASYNC_POSTREAD);
 		txstat = q->q_tx.rge_tx_list[cur].rge_cmdsts;
 		rge_tx_list_sync(sc, q, cur, 1, BUS_DMASYNC_PREREAD);
-		if (ISSET(txstat, htole32(RGE_TDCMDSTS_OWN))) {
+		if ((txstat & htole32(RGE_TDCMDSTS_OWN)) != 0) {
 			free = 2;
 			break;
 		}
 
-		bus_dmamap_sync(sc->sc_dmat_tx_buf, txq->txq_dmamap, 0,
-		    txq->txq_dmamap->dm_mapsize, BUS_DMASYNC_POSTWRITE);
+		bus_dmamap_sync(sc->sc_dmat_tx_buf, txq->txq_dmamap,
+		    BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc->sc_dmat_tx_buf, txq->txq_dmamap);
 		m_freem(txq->txq_mbuf);
 		txq->txq_mbuf = NULL;
 
-		if (ISSET(txstat,
-		    htole32(RGE_TDCMDSTS_EXCESSCOLL | RGE_TDCMDSTS_COLL)))
-			ifp->if_collisions++;
-		if (ISSET(txstat, htole32(RGE_TDCMDSTS_TXERR)))
-			ifp->if_oerrors++;
+		if ((txstat &
+		    htole32(RGE_TDCMDSTS_EXCESSCOLL | RGE_TDCMDSTS_COLL)) != 0)
+			if_inc_counter(ifp, IFCOUNTER_COLLISIONS, 1);
+		if ((txstat & htole32(RGE_TDCMDSTS_TXERR)) != 0)
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 
 		idx = RGE_NEXT_TX_DESC(cur);
 		free = 1;
@@ -2263,16 +2288,24 @@ rge_txeof(struct rge_queues *q)
 
 	q->q_tx.rge_txq_considx = idx;
 
+	/*
+	 * TODO: this is where openbsd kicks the transmit
+	 * queue to continue transmitting.
+	 *
+	 * We'll need to do something similar here if we're
+	 * using a deferred transmit task.
+	 */
+#if 0
 	if (ifq_is_oactive(&ifp->if_snd))
 		ifq_restart(&ifp->if_snd);
 	else if (free == 2)
 		ifq_serialize(&ifp->if_snd, &sc->sc_task);
 	else
 		ifp->if_timer = 0;
+#endif
 
 	return (1);
 }
-#endif
 
 static int
 rge_reset(struct rge_softc *sc)
@@ -4149,6 +4182,15 @@ rge_get_link_status(struct rge_softc *sc)
 }
 
 #if 0
+/**
+ * @brief Deferred openbsd task to kick-start TX.
+ *
+ * This needs to be done after the TX rings are updated
+ * in order to kick-start a transmit.
+ *
+ * For FreeBSD we'd need to do this inside the driver lock,
+ * after the TX ring has been updated.
+ */
 void
 rge_txstart(void *arg)
 {

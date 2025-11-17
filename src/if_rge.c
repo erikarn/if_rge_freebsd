@@ -2241,6 +2241,8 @@ rge_txeof(struct rge_queues *q)
 	int cons, prod, cur, idx;
 	int free = 0;
 
+	RGE_ASSERT_LOCKED(sc);
+
 	prod = q->q_tx.rge_txq_prodidx;
 	cons = q->q_tx.rge_txq_considx;
 

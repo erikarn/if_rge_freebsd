@@ -434,7 +434,15 @@ struct rge_softc {
 	struct rge_queues	*sc_queues;
 	unsigned int		sc_nqueues;
 
-	struct task		sc_task;
+	bool			sc_detaching;
+	bool			sc_stopped;
+
+	/* Note: these likely should be per-TXQ */
+	struct mbufq		sc_txq;
+	struct taskqueue *	sc_tq;
+	char			sc_tq_name[32];
+	char			sc_tq_thr_name[32];
+	struct task		sc_tx_task;
 
 	struct callout		sc_timeout;	/* 1 second tick */
 

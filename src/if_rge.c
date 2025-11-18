@@ -134,6 +134,8 @@ static uint16_t	rge_read_phy(struct rge_softc *, uint16_t, uint16_t);
 static void		rge_write_phy_ocp(struct rge_softc *, uint16_t, uint16_t);
 static uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
 static int		rge_get_link_status(struct rge_softc *);
+static void	rge_tx_task(void *, int);
+static void	rge_txq_flush_mbufs(struct rge_softc *sc);
 #if 0
 void		rge_txstart(void *);
 #endif
@@ -582,9 +584,24 @@ rge_attach(device_t dev)
 
 #endif
 
-#if 0
-	task_set(&sc->sc_task, rge_txstart, sc);
-#endif
+	/*
+	 * TODO: technically should be per txq but we only support
+	 * one TXQ at the moment.
+	 */
+	mbufq_init(&sc->sc_txq, RGE_TX_LIST_CNT);
+
+	snprintf(sc->sc_tq_name, sizeof(sc->sc_tq_name),
+	    "%s taskq", device_get_nameunit(sc->sc_dev));
+	snprintf(sc->sc_tq_thr_name, sizeof(sc->sc_tq_thr_name),
+	    "%s taskq thread", device_get_nameunit(sc->sc_dev));
+
+	sc->sc_tq = taskqueue_create(sc->sc_tq_name, M_NOWAIT,
+	    taskqueue_thread_enqueue, &sc->sc_tq);
+	taskqueue_start_threads(&sc->sc_tq, 1, PI_NET, "%s",
+	    sc->sc_tq_thr_name);
+
+	TASK_INIT(&sc->sc_tx_task, 0, rge_tx_task, sc);
+
 	callout_init_mtx(&sc->sc_timeout, &sc->sc_mtx, 0);
 
 #if 0
@@ -607,32 +624,69 @@ fail:
 	return (ENXIO);
 }
 
+/**
+ * @brief flush the mbufq queue
+ *
+ * Again this should likely be per-TXQ.
+ *
+ * This should be called with the driver lock held.
+ */
+static void
+rge_txq_flush_mbufs(struct rge_softc *sc)
+{
+	struct mbuf *m;
+	int ntx = 0;
+
+	RGE_ASSERT_LOCKED(sc);
+
+	while ((m = mbufq_dequeue(&sc->sc_txq)) != NULL) {
+		m_freem(m);
+		ntx++;
+	}
+
+	RGE_DPRINTF(sc, RGE_DEBUG_XMIT, "%s: %d frames flushed\n", __func__,
+	    ntx);
+}
+
 static int
 rge_detach(device_t dev)
 {
 	struct rge_softc *sc = device_get_softc(dev);
 	int i, rid;
 
-	/* TODO: global flag, detaching */
+	/* global flag, detaching */
+	RGE_LOCK(sc);
+	sc->sc_stopped = true;
+	sc->sc_detaching = true;
+	RGE_UNLOCK(sc);
 
-	/* TODO: stop/drain network interface */
+	/* stop/drain network interface */
 	callout_drain(&sc->sc_timeout);
+
+	/* Make sure TX task isn't running */
+	if (sc->sc_tq != NULL) {
+		while (taskqueue_cancel(sc->sc_tq, &sc->sc_tx_task, NULL) != 0)
+			taskqueue_drain(sc->sc_tq, &sc->sc_tx_task);
+	}
 
 	RGE_LOCK(sc);
 	callout_stop(&sc->sc_timeout);
 
-	/* TODO: stop NIC */
+	/* stop NIC / DMA */
 	rge_stop_locked(sc);
-
-	/* TODO: stop DMA */
 
 	/* TODO: wait for completion */
 
-	/* TODO: free pending TX mbufs */
-
-	/* TODO: free RX mbuf ring */
+	/* Free pending TX mbufs */
+	rge_txq_flush_mbufs(sc);
 
 	RGE_UNLOCK(sc);
+
+	/* Free taskqueue */
+	if (sc->sc_tq != NULL) {
+		taskqueue_free(sc->sc_tq);
+		sc->sc_tq = NULL;
+	}
 
 	/* Free descriptor memory */
 	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: freemem\n", __func__);
@@ -1104,6 +1158,11 @@ rge_qflush_if(if_t ifp)
 	struct rge_softc *sc = if_getsoftc(ifp);
 
 	RGE_PRINT_TODO(sc, "%s: called!\n", __func__);
+
+	/* TODO: this should iterate over the TXQs */
+	RGE_LOCK(sc);
+	rge_txq_flush_mbufs(sc);
+	RGE_UNLOCK(sc);
 }
 
 /**
@@ -1120,10 +1179,28 @@ static int
 rge_transmit_if(if_t ifp, struct mbuf *m)
 {
 	struct rge_softc *sc = if_getsoftc(ifp);
+	int ret;
 
-	RGE_PRINT_TODO(sc, "%s: called!\n", __func__);
-	/* Remember, don't free the mbuf on error! */
-	return (ENXIO);
+	RGE_LOCK(sc);
+	if (sc->sc_stopped == true) {
+		/* XXX stats */
+		RGE_UNLOCK(sc);
+		return (ENETDOWN);	/* TODO: better error? */
+	}
+
+	/* XXX again should be a per-TXQ thing */
+	ret = mbufq_enqueue(&sc->sc_txq, m);
+	if (ret != 0) {
+		/* XXX stats */
+		RGE_UNLOCK(sc);
+		return (ret);
+	}
+
+	/* mbuf is owned by the driver, schedule transmit */
+	taskqueue_enqueue(sc->sc_tq, &sc->sc_tx_task);
+
+	RGE_UNLOCK(sc);
+	return (0);
 }
 
 static void
@@ -1382,6 +1459,9 @@ rge_init_locked(struct rge_softc *sc)
 	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);
 
 	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: init completed!\n", __func__);
+
+	/* Unblock transmit when we release the lock */
+	sc->sc_stopped = false;
 }
 
 /*
@@ -1397,9 +1477,12 @@ rge_stop_locked(struct rge_softc *sc)
 
 	RGE_ASSERT_LOCKED(sc);
 
+	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: called!\n", __func__);
+
 	callout_stop(&sc->sc_timeout);
 
-	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: called!\n", __func__);
+	/* Stop pending TX submissions */
+	sc->sc_stopped = true;
 
 #if 0
 	ifp->if_timer = 0;
@@ -1447,6 +1530,10 @@ rge_stop_locked(struct rge_softc *sc)
 			q->q_rx.rge_rxq[i].rxq_mbuf = NULL;
 		}
 	}
+
+	/* Free pending TX frames */
+	/* TODO: should be per TX queue */
+	rge_txq_flush_mbufs(sc);
 }
 
 /*
@@ -4201,6 +4288,36 @@ rge_txstart(void *arg)
 	RGE_WRITE_2(sc, RGE_TXSTART, RGE_TXSTART_START);
 }
 #endif
+
+/**
+ * @brief Deferred packet dequeue and submit.
+ */
+static void
+rge_tx_task(void *arg, int npending)
+{
+	struct rge_softc *sc = (struct rge_softc *) arg;
+	struct mbuf *m;
+	int ntx = 0;
+
+	RGE_DPRINTF(sc, RGE_DEBUG_XMIT, "%s: running\n", __func__);
+
+	RGE_LOCK(sc);
+	if (sc->sc_stopped == true) {
+		RGE_UNLOCK(sc);
+		return;
+	}
+
+	/* For now consume what frames are queued */
+	while ((m = mbufq_dequeue(&sc->sc_txq)) != NULL) {
+		m_freem(m);
+		ntx++;
+	}
+
+	RGE_DPRINTF(sc, RGE_DEBUG_XMIT, "%s: handled %d frames\n", __func__,
+	    ntx);
+
+	RGE_UNLOCK(sc);
+}
 
 /**
  * @brief Called by the sc_timeout callout.

@@ -47,13 +47,11 @@
 
 #include <machine/bus.h>
 #include <machine/resource.h>
-//#include <machine/intr.h>
 
 #include <dev/mii/mii.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
-//#include <dev/pci/pcidevs.h>
 
 #include "if_rge_vendor.h"
 #include "if_rgereg.h"
@@ -794,6 +792,11 @@ rge_intr_msi(void *arg)
 		return;
 
 	RGE_LOCK(sc);
+
+	if (sc->sc_suspended || sc->sc_stopped || sc->sc_detaching) {
+		RGE_UNLOCK(sc);
+		return;
+	}
 
 	/* Disable interrupts. */
 	RGE_WRITE_4(sc, RGE_IMR, 0);
@@ -4449,22 +4452,68 @@ rge_wol_power(struct rge_softc *sc)
 
 #endif
 
+/**
+ * @brief Suspend
+ */
+static int
+rge_suspend(device_t dev)
+{
+	struct rge_softc *sc = device_get_softc(dev);
+
+	RGE_LOCK(sc);
+	rge_stop_locked(sc);
+	/* TODO: wake on lan */
+	sc->sc_suspended = true;
+	RGE_UNLOCK(sc);
+
+	return (0);
+}
+
+/**
+ * @brief Resume
+ */
+static int
+rge_resume(device_t dev)
+{
+	struct rge_softc *sc = device_get_softc(dev);
+
+	RGE_LOCK(sc);
+	/* TODO: wake on lan */
+
+	/* reinit if required */
+	if (if_getflags(sc->sc_ifp) & IFF_UP)
+		rge_init_locked(sc);
+
+	sc->sc_suspended = false;
+
+	RGE_UNLOCK(sc);
+
+	return (0);
+}
+
+/**
+ * @brief Shutdown the driver during shutdown
+ */
+static int
+rge_shutdown(device_t dev)
+{
+	struct rge_softc *sc = device_get_softc(dev);
+
+	RGE_LOCK(sc);
+	rge_stop_locked(sc);
+	RGE_UNLOCK(sc);
+
+	return (0);
+}
+
 static device_method_t rge_methods[] = {
 	DEVMETHOD(device_probe,			rge_probe),
 	DEVMETHOD(device_attach,		rge_attach),
 	DEVMETHOD(device_detach,		rge_detach),
-#if 0
+
 	DEVMETHOD(device_suspend,		rge_suspend),
 	DEVMETHOD(device_resume,		rge_resume),
 	DEVMETHOD(device_shutdown,		rge_shutdown),
-#endif
-
-	/* TODO: does this require MII bus stuff? */
-#if 0
-	DEVMETHOD(miibus_readreg,		rge_miibus_readreg),
-	DEVMETHOD(miibus_writereg,		rge_miibus_writereg),
-	DEVMETHOD(miibus_statchg,		rge_miibus_statchg),
-#endif
 
 	DEVMETHOD_END
 };
@@ -4477,11 +4526,5 @@ static driver_t rge_driver = {
 
 MODULE_DEPEND(rge, pci, 1, 1, 1);
 MODULE_DEPEND(rge, ether, 1, 1, 1);
-#if 0
-MODULE_DEPEND(rge, miibus, 1, 1, 1);
-#endif
 
 DRIVER_MODULE_ORDERED(rge, pci, rge_driver, NULL, NULL, SI_ORDER_ANY);
-#if 0
-DRIVER_MODULE(miibus, rl, miibus_driver, 0, 0);
-#endif

@@ -436,6 +436,7 @@ struct rge_softc {
 
 	bool			sc_detaching;
 	bool			sc_stopped;
+	bool			sc_suspended;
 
 	/* Note: these likely should be per-TXQ */
 	struct mbufq		sc_txq;

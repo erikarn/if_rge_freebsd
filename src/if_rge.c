@@ -76,62 +76,62 @@ static void	rge_qflush_if(if_t);
 static void	rge_init_if(void *);
 static void	rge_init_locked(struct rge_softc *);
 static void	rge_stop_locked(struct rge_softc *);
-static int		rge_ifmedia_upd(if_t);
-static void		rge_ifmedia_sts(if_t, struct ifmediareq *);
-static int		rge_allocmem(struct rge_softc *);
-static int		rge_freemem(struct rge_softc *);
-static int		rge_newbuf(struct rge_queues *);
+static int	rge_ifmedia_upd(if_t);
+static void	rge_ifmedia_sts(if_t, struct ifmediareq *);
+static int	rge_allocmem(struct rge_softc *);
+static int	rge_freemem(struct rge_softc *);
+static int	rge_newbuf(struct rge_queues *);
 static void	rge_rx_list_init(struct rge_queues *);
 static void	rge_tx_list_init(struct rge_queues *);
 static void	rge_fill_rx_ring(struct rge_queues *);
 static int	rge_rxeof(struct rge_queues *, struct mbufq *);
 static int	rge_txeof(struct rge_queues *);
-static int		rge_reset(struct rge_softc *);
-static void		rge_iff_locked(struct rge_softc *);
-static int		rge_chipinit(struct rge_softc *);
-static void		rge_set_phy_power(struct rge_softc *, int);
-static void		rge_ephy_config(struct rge_softc *);
-static void		rge_ephy_config_mac_r25(struct rge_softc *);
-static void		rge_ephy_config_mac_r25b(struct rge_softc *);
-static void		rge_ephy_config_mac_r27(struct rge_softc *);
-static void		rge_mac_config_mcu(struct rge_softc *, enum rge_mac_type);
+static int	rge_reset(struct rge_softc *);
+static void	rge_iff_locked(struct rge_softc *);
+static int	rge_chipinit(struct rge_softc *);
+static void	rge_set_phy_power(struct rge_softc *, int);
+static void	rge_ephy_config(struct rge_softc *);
+static void	rge_ephy_config_mac_r25(struct rge_softc *);
+static void	rge_ephy_config_mac_r25b(struct rge_softc *);
+static void	rge_ephy_config_mac_r27(struct rge_softc *);
+static void	rge_mac_config_mcu(struct rge_softc *, enum rge_mac_type);
 static uint64_t	rge_mcu_get_bin_version(uint16_t);
-static void		rge_mcu_set_version(struct rge_softc *, uint64_t);
-static int		rge_phy_config(struct rge_softc *);
-static void		rge_phy_config_mac_r27(struct rge_softc *);
-static void		rge_phy_config_mac_r26(struct rge_softc *);
-static void		rge_phy_config_mac_r25(struct rge_softc *);
-static void		rge_phy_config_mac_r25b(struct rge_softc *);
-static void		rge_phy_config_mac_r25d(struct rge_softc *);
-static void		rge_phy_config_mcu(struct rge_softc *, uint16_t);
-static void		rge_set_macaddr(struct rge_softc *, const uint8_t *);
-static void		rge_get_macaddr(struct rge_softc *, uint8_t *);
-static void		rge_hw_init(struct rge_softc *);
-static void		rge_hw_reset(struct rge_softc *);
-static void		rge_disable_phy_ocp_pwrsave(struct rge_softc *);
-static void		rge_patch_phy_mcu(struct rge_softc *, int);
-static void		rge_add_media_types(struct rge_softc *);
-static void		rge_config_imtype(struct rge_softc *, int);
-static void		rge_disable_aspm_clkreq(struct rge_softc *);
-static void		rge_disable_hw_im(struct rge_softc *);
-static void		rge_disable_sim_im(struct rge_softc *);
-static void		rge_setup_sim_im(struct rge_softc *);
-static void		rge_setup_intr(struct rge_softc *, int);
-static void		rge_switch_mcu_ram_page(struct rge_softc *, int);
-static int		rge_exit_oob(struct rge_softc *);
-static void		rge_write_csi(struct rge_softc *, uint32_t, uint32_t);
+static void	rge_mcu_set_version(struct rge_softc *, uint64_t);
+static int	rge_phy_config(struct rge_softc *);
+static void	rge_phy_config_mac_r27(struct rge_softc *);
+static void	rge_phy_config_mac_r26(struct rge_softc *);
+static void	rge_phy_config_mac_r25(struct rge_softc *);
+static void	rge_phy_config_mac_r25b(struct rge_softc *);
+static void	rge_phy_config_mac_r25d(struct rge_softc *);
+static void	rge_phy_config_mcu(struct rge_softc *, uint16_t);
+static void	rge_set_macaddr(struct rge_softc *, const uint8_t *);
+static void	rge_get_macaddr(struct rge_softc *, uint8_t *);
+static void	rge_hw_init(struct rge_softc *);
+static void	rge_hw_reset(struct rge_softc *);
+static void	rge_disable_phy_ocp_pwrsave(struct rge_softc *);
+static void	rge_patch_phy_mcu(struct rge_softc *, int);
+static void	rge_add_media_types(struct rge_softc *);
+static void	rge_config_imtype(struct rge_softc *, int);
+static void	rge_disable_aspm_clkreq(struct rge_softc *);
+static void	rge_disable_hw_im(struct rge_softc *);
+static void	rge_disable_sim_im(struct rge_softc *);
+static void	rge_setup_sim_im(struct rge_softc *);
+static void	rge_setup_intr(struct rge_softc *, int);
+static void	rge_switch_mcu_ram_page(struct rge_softc *, int);
+static int	rge_exit_oob(struct rge_softc *);
+static void	rge_write_csi(struct rge_softc *, uint32_t, uint32_t);
 static uint32_t	rge_read_csi(struct rge_softc *, uint32_t);
-static void		rge_write_mac_ocp(struct rge_softc *, uint16_t, uint16_t);
+static void	rge_write_mac_ocp(struct rge_softc *, uint16_t, uint16_t);
 static uint16_t	rge_read_mac_ocp(struct rge_softc *, uint16_t);
-static void		rge_write_ephy(struct rge_softc *, uint16_t, uint16_t);
+static void	rge_write_ephy(struct rge_softc *, uint16_t, uint16_t);
 static uint16_t	rge_read_ephy(struct rge_softc *, uint16_t);
 static uint16_t	rge_check_ephy_ext_add(struct rge_softc *, uint16_t);
-static void		rge_r27_write_ephy(struct rge_softc *, uint16_t, uint16_t);
-static void		rge_write_phy(struct rge_softc *, uint16_t, uint16_t, uint16_t);
+static void	rge_r27_write_ephy(struct rge_softc *, uint16_t, uint16_t);
+static void	rge_write_phy(struct rge_softc *, uint16_t, uint16_t, uint16_t);
 static uint16_t	rge_read_phy(struct rge_softc *, uint16_t, uint16_t);
-static void		rge_write_phy_ocp(struct rge_softc *, uint16_t, uint16_t);
+static void	rge_write_phy_ocp(struct rge_softc *, uint16_t, uint16_t);
 static uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
-static int		rge_get_link_status(struct rge_softc *);
+static int	rge_get_link_status(struct rge_softc *);
 static void	rge_tx_task(void *, int);
 static void	rge_txq_flush_mbufs(struct rge_softc *sc);
 static void	rge_tick(void *);
@@ -213,6 +213,7 @@ rge_attach_if(struct rge_softc *sc, const char *eaddr)
 	/* TODO: set WOL */
 	/* TODO: set vlan as appropriate */
 
+	/* TODO: is this needed for iftransmit? */
 	if_setsendqlen(sc->sc_ifp, RGE_TX_LIST_CNT - 1);
 	if_setsendqready(sc->sc_ifp);
 }
@@ -674,7 +675,7 @@ rge_intr_msi(void *arg)
 	uint32_t status;
 	int claimed = 0, rv;
 
-	/* TODO: counter */
+	sc->sc_drv_stats.intr_cnt++;
 
 	mbufq_init(&rx_mq, RGE_RX_LIST_CNT);
 
@@ -711,8 +712,7 @@ rge_intr_msi(void *arg)
 		rv |= rge_txeof(q);
 
 		if (status & RGE_ISR_SYSTEM_ERR) {
-			RGE_PRINT_ERROR(sc, "%s: RGE_ISR_SYSTEM_ERR\n", __func__);
-			/* XXX TODO: error log? count? */
+			sc->sc_drv_stats.intr_system_err_cnt++;
 			rge_init_locked(sc);
 		}
 		claimed = 1;
@@ -750,8 +750,10 @@ done:
 	RGE_UNLOCK(sc);
 
 	/* Handle any RX frames, outside of the driver lock */
-	while ((m = mbufq_dequeue(&rx_mq)) != NULL)
+	while ((m = mbufq_dequeue(&rx_mq)) != NULL) {
+		sc->sc_drv_stats.recv_input_cnt++;
 		if_input(sc->sc_ifp, m);
+	}
 
 	(void) claimed;
 }
@@ -1010,9 +1012,11 @@ rge_transmit_if(if_t ifp, struct mbuf *m)
 	struct rge_softc *sc = if_getsoftc(ifp);
 	int ret;
 
+	sc->sc_drv_stats.transmit_call_cnt++;
+
 	RGE_LOCK(sc);
 	if (sc->sc_stopped == true) {
-		/* XXX stats */
+		sc->sc_drv_stats.transmit_stopped_cnt++;
 		RGE_UNLOCK(sc);
 		return (ENETDOWN);	/* TODO: better error? */
 	}
@@ -1020,13 +1024,14 @@ rge_transmit_if(if_t ifp, struct mbuf *m)
 	/* XXX again should be a per-TXQ thing */
 	ret = mbufq_enqueue(&sc->sc_txq, m);
 	if (ret != 0) {
-		/* XXX stats */
+		sc->sc_drv_stats.transmit_full_cnt++;
 		RGE_UNLOCK(sc);
 		return (ret);
 	}
 
 	/* mbuf is owned by the driver, schedule transmit */
 	taskqueue_enqueue(sc->sc_tq, &sc->sc_tx_task);
+	sc->sc_drv_stats.transmit_queued_cnt++;
 
 	RGE_UNLOCK(sc);
 	return (0);
@@ -1984,6 +1989,8 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 
 	RGE_ASSERT_LOCKED(sc);
 
+	sc->sc_drv_stats.rxeof_cnt++;
+
 	RGE_DPRINTF(sc, RGE_DEBUG_INTR, "%s; called\n", __func__);
 
 	/* Note: if_re is POSTREAD/WRITE, rge is only POSTWRITE */
@@ -2051,6 +2058,7 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 
 		if ((rxstat & RGE_RDCMDSTS_SOF) != 0) {
 			if (q->q_rx.rge_head != NULL) {
+				sc->sc_drv_stats.rx_desc_err_multidesc++;
 				if_inc_counter(sc->sc_ifp, IFCOUNTER_IERRORS,
 				    1);
 				m_freem(q->q_rx.rge_head);
@@ -2160,6 +2168,8 @@ rge_txeof(struct rge_queues *q)
 	int free = 0, ntx = 0;
 
 	RGE_ASSERT_LOCKED(sc);
+
+	sc->sc_drv_stats.txeof_cnt++;
 
 	prod = q->q_tx.rge_txq_prodidx;
 	cons = q->q_tx.rge_txq_considx;
@@ -4108,9 +4118,12 @@ rge_tx_task(void *arg, int npending)
 	int ntx = 0;
 	int idx, free, used;
 
+
 	RGE_DPRINTF(sc, RGE_DEBUG_XMIT, "%s: running\n", __func__);
 
 	RGE_LOCK(sc);
+	sc->sc_drv_stats.tx_task_cnt++;
+
 	if (sc->sc_stopped == true) {
 		RGE_UNLOCK(sc);
 		return;
@@ -4194,8 +4207,10 @@ rge_link_state(struct rge_softc *sc)
 	if (rge_get_link_status(sc))
 		link = LINK_STATE_UP;
 
-	if (if_getlinkstate(sc->sc_ifp) != link)
+	if (if_getlinkstate(sc->sc_ifp) != link) {
+		sc->sc_drv_stats.link_state_change_cnt++;
 		if_link_state_change(sc->sc_ifp, link);
+	}
 }
 
 #if 0

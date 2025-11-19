@@ -408,6 +408,42 @@ enum rge_mac_type {
 #define RGE_RXCFG_CONFIG_8125D	0x41200c00
 #define RGE_RXCFG_CONFIG_8126	0x41200d00
 
+struct rge_drv_stats {
+	/* How many times if_transmit() was called */
+	uint64_t		transmit_call_cnt;
+	/* Transmitted frame failed because the interface was stopped */
+	uint64_t		transmit_stopped_cnt;
+	/* Transmitted frame failed because the TX queue is full */
+	uint64_t		transmit_full_cnt;
+	/* How many transmit frames were queued for transmit */
+	uint64_t		transmit_queued_cnt;
+
+	/* How many times the interrupt routine was called */
+	uint64_t		intr_cnt;
+	/* How many times SYSTEM_ERR was set, requiring a hardware reset */
+	uint64_t		intr_system_err_cnt;
+	/* How many times rge_rxeof was called */
+	uint64_t		rxeof_cnt;
+	/* How many times rge_txeof was called */
+	uint64_t		txeof_cnt;
+
+	/* How many times the link state changed */
+	uint64_t		link_state_change_cnt;
+
+	/* How many times tx_task was run */
+	uint64_t		tx_task_cnt;
+
+	/* Count of frames passed up into if_input() */
+	uint64_t		recv_input_cnt;
+
+	/*
+	 * For now - driver doesn't support multi descriptor
+	 * RX frames; so count if it happens so it'll be noticed.
+	 */
+	uint64_t		rx_desc_err_multidesc;
+
+};
+
 struct rge_softc {
 	device_t		sc_dev;
 	if_t			sc_ifp;		/* Ethernet common data */
@@ -459,6 +495,8 @@ struct rge_softc {
 #define RGE_IMTYPE_SIM		1
 
 	uint32_t		sc_debug;
+
+	struct rge_drv_stats	sc_drv_stats;
 };
 
 /*

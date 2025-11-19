@@ -2326,7 +2326,7 @@ rge_txeof(struct rge_queues *q)
 	struct rge_txq *txq;
 	uint32_t txstat;
 	int cons, prod, cur, idx;
-	int free = 0;
+	int free = 0, ntx = 0;
 
 	RGE_ASSERT_LOCKED(sc);
 
@@ -2351,6 +2351,7 @@ rge_txeof(struct rge_queues *q)
 		bus_dmamap_unload(sc->sc_dmat_tx_buf, txq->txq_dmamap);
 		m_freem(txq->txq_mbuf);
 		txq->txq_mbuf = NULL;
+		ntx++;
 
 		if ((txstat &
 		    htole32(RGE_TDCMDSTS_EXCESSCOLL | RGE_TDCMDSTS_COLL)) != 0)
@@ -2377,21 +2378,14 @@ rge_txeof(struct rge_queues *q)
 
 	q->q_tx.rge_txq_considx = idx;
 
-	/*
-	 * TODO: this is where openbsd kicks the transmit
-	 * queue to continue transmitting.
-	 *
-	 * We'll need to do something similar here if we're
-	 * using a deferred transmit task.
-	 */
-#if 0
-	if (ifq_is_oactive(&ifp->if_snd))
-		ifq_restart(&ifp->if_snd);
-	else if (free == 2)
-		ifq_serialize(&ifp->if_snd, &sc->sc_task);
-	else
-		ifp->if_timer = 0;
-#endif
+	RGE_DPRINTF(sc, RGE_DEBUG_XMIT,
+	    "%s: handled %d frames; prod=%d, cons=%d\n", __func__,
+	    ntx, q->q_tx.rge_txq_prodidx, q->q_tx.rge_txq_considx);
+
+	if (free == 2)
+		taskqueue_enqueue(sc->sc_tq, &sc->sc_tx_task);
+
+	/* XXX TODO: kick watchdog timer */
 
 	return (1);
 }
@@ -4296,8 +4290,11 @@ static void
 rge_tx_task(void *arg, int npending)
 {
 	struct rge_softc *sc = (struct rge_softc *) arg;
+	/* Note: for now, one queue */
+	struct rge_queues *q = sc->sc_queues;
 	struct mbuf *m;
 	int ntx = 0;
+	int idx, free, used;
 
 	RGE_DPRINTF(sc, RGE_DEBUG_XMIT, "%s: running\n", __func__);
 
@@ -4307,14 +4304,57 @@ rge_tx_task(void *arg, int npending)
 		return;
 	}
 
+	/* Calculate free space. */
+	idx = q->q_tx.rge_txq_prodidx;
+	free = q->q_tx.rge_txq_considx;
+	if (free <= idx)
+		free += RGE_TX_LIST_CNT;
+	free -= idx;
+
+	for (;;) {
+		if (free < RGE_TX_NSEGS + 2) {
+			break;
+		}
+
+		/* Dequeue */
+		m = mbufq_dequeue(&sc->sc_txq);
+		if (m == NULL)
+			break;
+
+		/* Attempt to encap */
+		used = rge_encap(sc, q, m, idx);
+		if (used == 0) {
+			mbufq_prepend(&sc->sc_txq, m);
+			break;
+		}
+		/* Note: mbuf is now owned by the tx ring */
+
+		/* Update free/idx pointers */
+		free -= used;
+		idx += used;
+		if (idx >= RGE_TX_LIST_CNT)
+			idx -= RGE_TX_LIST_CNT;
+
+		ntx++;
+	}
+
+	/* Ok, did we queue anything? If so, poke the hardware */
+	if (ntx > 0) {
+		q->q_tx.rge_txq_prodidx = idx;
+		RGE_WRITE_2(sc, RGE_TXSTART, RGE_TXSTART_START);
+	}
+
+#if 0
 	/* For now consume what frames are queued */
 	while ((m = mbufq_dequeue(&sc->sc_txq)) != NULL) {
 		m_freem(m);
 		ntx++;
 	}
+#endif
 
-	RGE_DPRINTF(sc, RGE_DEBUG_XMIT, "%s: handled %d frames\n", __func__,
-	    ntx);
+	RGE_DPRINTF(sc, RGE_DEBUG_XMIT,
+	    "%s: handled %d frames; prod=%d, cons=%d\n", __func__,
+	    ntx, q->q_tx.rge_txq_prodidx, q->q_tx.rge_txq_considx);
 
 	RGE_UNLOCK(sc);
 }

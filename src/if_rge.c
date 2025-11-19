@@ -818,6 +818,7 @@ rge_intr_msi(void *arg)
 		rv |= rge_txeof(q);
 
 		if (status & RGE_ISR_SYSTEM_ERR) {
+			RGE_PRINT_ERROR(sc, "%s: RGE_ISR_SYSTEM_ERR\n", __func__);
 			/* XXX TODO: error log? count? */
 			rge_init_locked(sc);
 		}
@@ -1223,6 +1224,12 @@ rge_init_locked(struct rge_softc *sc)
 	RGE_ASSERT_LOCKED(sc);
 
 	RGE_DPRINTF(sc, RGE_DEBUG_INIT, "%s: called!\n", __func__);
+
+	/* Don't double-init the hardware */
+	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) != 0) {
+		RGE_PRINT_ERROR(sc, "%s: called whilst running?\n", __func__);
+		return;
+	}
 
 	/*
 	 * XXX TODO: calling stop before start feels hacky?

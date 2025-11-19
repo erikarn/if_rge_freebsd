@@ -921,7 +921,7 @@ rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 		return (0);
 	}
 
-	bus_dmamap_sync(sc->sc_dmat_tx_desc, txmap, BUS_DMASYNC_PREWRITE);
+	bus_dmamap_sync(sc->sc_dmat_tx_buf, txmap, BUS_DMASYNC_PREWRITE);
 
 #if 0
 	/*

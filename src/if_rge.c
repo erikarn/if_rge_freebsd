@@ -134,9 +134,6 @@ static uint16_t	rge_read_phy_ocp(struct rge_softc *, uint16_t);
 static int		rge_get_link_status(struct rge_softc *);
 static void	rge_tx_task(void *, int);
 static void	rge_txq_flush_mbufs(struct rge_softc *sc);
-#if 0
-void		rge_txstart(void *);
-#endif
 static void	rge_tick(void *);
 static void	rge_link_state(struct rge_softc *);
 #if 0
@@ -237,21 +234,6 @@ rge_attach(device_t dev)
 	mtx_init(&sc->sc_mtx, device_get_nameunit(dev), MTX_NETWORK_LOCK,
 	    MTX_DEF);
 
-#if 0
-	struct rge_softc *sc = (struct rge_softc *)self;
-	struct pci_attach_args *pa = aux;
-	pci_chipset_tag_t pc = pa->pa_pc;
-	pci_intr_handle_t ih;
-	const char *intrstr = NULL;
-	struct ifnet *ifp;
-	struct rge_queues *q;
-	pcireg_t reg;
-	uint32_t hwrev;
-	uint8_t eaddr[ETHER_ADDR_LEN];
-	int offset;
-
-	pci_set_powerstate(pa->pa_pc, pa->pa_tag, PCI_PMCSR_STATE_D0);
-#endif
 	/* Enable bus mastering */
 	pci_enable_busmaster(dev);
 
@@ -278,23 +260,6 @@ rge_attach(device_t dev)
 	sc->rge_bhandle = rman_get_bushandle(sc->sc_bres);
 	sc->rge_btag = rman_get_bustag(sc->sc_bres);
 	sc->rge_bsize = rman_get_size(sc->sc_bres);
-
-#if 0
-	if (pci_mapreg_map(pa, RGE_PCI_BAR2, PCI_MAPREG_TYPE_MEM |
-	    PCI_MAPREG_MEM_TYPE_64BIT, 0, &sc->rge_btag, &sc->rge_bhandle,
-	    NULL, &sc->rge_bsize, 0)) {
-		if (pci_mapreg_map(pa, RGE_PCI_BAR1, PCI_MAPREG_TYPE_MEM |
-		    PCI_MAPREG_MEM_TYPE_32BIT, 0, &sc->rge_btag,
-		    &sc->rge_bhandle, NULL, &sc->rge_bsize, 0)) {
-			if (pci_mapreg_map(pa, RGE_PCI_BAR0, PCI_MAPREG_TYPE_IO,
-			    0, &sc->rge_btag, &sc->rge_bhandle, NULL,
-			    &sc->rge_bsize, 0)) {
-				printf(": can't map mem or i/o space\n");
-				return;
-			}
-		}
-	}
-#endif
 
 	q = malloc(sizeof(struct rge_queues), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (q == NULL) {
@@ -356,36 +321,6 @@ rge_attach(device_t dev)
 		    INTR_TYPE_NET | INTR_MPSAFE, NULL, rge_intr_msi,
 		    sc, &sc->sc_ih[i]);
 	}
-
-#if 0
-	/*
-	 * Allocate interrupt.
-	 */
-	if (pci_intr_map_msix(pa, 0, &ih) == 0 ||
-	    pci_intr_map_msi(pa, &ih) == 0)
-		sc->rge_flags |= RGE_FLAG_MSI;
-	else if (pci_intr_map(pa, &ih) != 0) {
-		printf(": couldn't map interrupt\n");
-		return;
-	}
-	intrstr = pci_intr_string(pc, ih);
-	sc->sc_ih = pci_intr_establish(pc, ih, IPL_NET | IPL_MPSAFE, rge_intr,
-	    sc, sc->sc_dev.dv_xname);
-	if (sc->sc_ih == NULL) {
-		printf(": couldn't establish interrupt");
-		if (intrstr != NULL)
-			printf(" at %s", intrstr);
-		printf("\n");
-		return;
-	}
-	printf(": %s", intrstr);
-#endif
-
-#if 0
-	sc->sc_dmat = pa->pa_dmat;
-	sc->sc_pc = pa->pa_pc;
-	sc->sc_tag = pa->pa_tag;
-#endif
 
 	/* Allocate top level bus DMA tag */
 	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1, 0,
@@ -507,10 +442,9 @@ rge_attach(device_t dev)
 		goto fail;
 	}
 
-	RGE_PRINT_INFO(sc, "HWREV: 0x%08x; rge_type=%d\n", hwrev,
-	    sc->rge_type);
-
 	rge_config_imtype(sc, RGE_IMTYPE_SIM);
+
+	/* TODO: disable ASPM/ECPM? */
 
 #if 0
 	/*
@@ -539,9 +473,6 @@ rge_attach(device_t dev)
 
 	RGE_PRINT_INFO(sc, "MAC address %6D\n", eaddr, ":");
 
-#if 0
-	memcpy(sc->sc_arpcom.ac_enaddr, eaddr, ETHER_ADDR_LEN);
-#endif
 	if (rge_allocmem(sc))
 		goto fail;
 
@@ -554,33 +485,6 @@ rge_attach(device_t dev)
 	sc->sc_media.ifm_media = sc->sc_media.ifm_cur->ifm_media;
 
 	rge_attach_if(sc, eaddr);
-
-#if 0
-	ifp = &sc->sc_arpcom.ac_if;
-	ifp->if_softc = sc;
-	strlcpy(ifp->if_xname, sc->sc_dev.dv_xname, IFNAMSIZ);
-	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_xflags = IFXF_MPSAFE;
-	ifp->if_ioctl = rge_ioctl;
-	ifp->if_qstart = rge_start;
-	ifp->if_watchdog = rge_watchdog;
-	ifq_init_maxlen(&ifp->if_snd, RGE_TX_LIST_CNT - 1);
-	ifp->if_hardmtu = RGE_JUMBO_MTU;
-
-	ifp->if_capabilities = IFCAP_VLAN_MTU | IFCAP_CSUM_IPv4 |
-	    IFCAP_CSUM_TCPv4 | IFCAP_CSUM_UDPv4;
-
-#if NVLAN > 0
-	ifp->if_capabilities |= IFCAP_VLAN_HWTAGGING;
-#endif
-
-#ifndef SMALL_KERNEL
-	ifp->if_capabilities |= IFCAP_WOL;
-	ifp->if_wol = rge_wol;
-	rge_wol(ifp, 0);
-#endif
-
-#endif
 
 	/*
 	 * TODO: technically should be per txq but we only support
@@ -602,20 +506,6 @@ rge_attach(device_t dev)
 
 	callout_init_mtx(&sc->sc_timeout, &sc->sc_mtx, 0);
 
-#if 0
-	/* Initialize ifmedia structures. */
-	ifmedia_init(&sc->sc_media, IFM_IMASK, rge_ifmedia_upd,
-	    rge_ifmedia_sts);
-	rge_add_media_types(sc);
-	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
-	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
-	sc->sc_media.ifm_media = sc->sc_media.ifm_cur->ifm_media;
-#endif
-
-#if 0
-	if_attach(ifp);
-	ether_ifattach(ifp);
-#endif
 	return (0);
 fail:
 	rge_detach(dev);
@@ -1078,71 +968,6 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 }
 
 #if 0
-/*
- * This is the OpenBSD transmit path.
- *
- * Note it's not queuing until the TX ring is full;
- * it leaves 1 transmit slot free so the "is it full?"
- * logic works correctly (and maybe the hardware will
- * appreciate it too.)
- */
-void
-rge_start(struct ifqueue *ifq)
-{
-	struct ifnet *ifp = ifq->ifq_if;
-	struct rge_softc *sc = ifp->if_softc;
-	struct rge_queues *q = sc->sc_queues;
-	struct mbuf *m;
-	int free, idx, used;
-	int queued = 0;
-
-	if (!LINK_STATE_IS_UP(ifp->if_link_state)) {
-		ifq_purge(ifq);
-		return;
-	}
-
-	/* Calculate free space. */
-	idx = q->q_tx.rge_txq_prodidx;
-	free = q->q_tx.rge_txq_considx;
-	if (free <= idx)
-		free += RGE_TX_LIST_CNT;
-	free -= idx;
-
-	for (;;) {
-		if (free < RGE_TX_NSEGS + 2) {
-			ifq_set_oactive(&ifp->if_snd);
-			break;
-		}
-
-		m = ifq_dequeue(ifq);
-		if (m == NULL)
-			break;
-
-		used = rge_encap(ifp, q, m, idx);
-		if (used == 0) {
-			m_freem(m);
-			continue;
-		}
-
-		KASSERT(used < free);
-		free -= used;
-
-		idx += used;
-		if (idx >= RGE_TX_LIST_CNT)
-			idx -= RGE_TX_LIST_CNT;
-
-		queued++;
-	}
-
-	if (queued == 0)
-		return;
-
-	/* Set a timeout in case the chip goes out to lunch. */
-	ifp->if_timer = 5;
-
-	q->q_tx.rge_txq_prodidx = idx;
-	ifq_serialize(ifq, &sc->sc_task);
-}
 
 void
 rge_watchdog(struct ifnet *ifp)
@@ -1509,10 +1334,6 @@ rge_stop_locked(struct rge_softc *sc)
 
 	RGE_MAC_CLRBIT(sc, 0xc0ac, 0x1f80);
 
-#if 0
-	intr_barrier(sc->sc_ih);
-	ifq_barrier(&ifp->if_snd);
-#endif
 	if_setdrvflagbits(sc->sc_ifp, 0, IFF_DRV_OACTIVE);
 
 	if (q->q_rx.rge_head != NULL) {
@@ -4274,25 +4095,6 @@ rge_get_link_status(struct rge_softc *sc)
 	return ((RGE_READ_2(sc, RGE_PHYSTAT) & RGE_PHYSTAT_LINK) ? 1 : 0);
 }
 
-#if 0
-/**
- * @brief Deferred openbsd task to kick-start TX.
- *
- * This needs to be done after the TX rings are updated
- * in order to kick-start a transmit.
- *
- * For FreeBSD we'd need to do this inside the driver lock,
- * after the TX ring has been updated.
- */
-void
-rge_txstart(void *arg)
-{
-	struct rge_softc *sc = arg;
-
-	RGE_WRITE_2(sc, RGE_TXSTART, RGE_TXSTART_START);
-}
-#endif
-
 /**
  * @brief Deferred packet dequeue and submit.
  */
@@ -4353,14 +4155,6 @@ rge_tx_task(void *arg, int npending)
 		q->q_tx.rge_txq_prodidx = idx;
 		RGE_WRITE_2(sc, RGE_TXSTART, RGE_TXSTART_START);
 	}
-
-#if 0
-	/* For now consume what frames are queued */
-	while ((m = mbufq_dequeue(&sc->sc_txq)) != NULL) {
-		m_freem(m);
-		ntx++;
-	}
-#endif
 
 	RGE_DPRINTF(sc, RGE_DEBUG_XMIT,
 	    "%s: handled %d frames; prod=%d, cons=%d\n", __func__,

@@ -420,9 +420,9 @@ rge_attach(device_t dev)
 	    0, /* boundary */
 	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
 	    NULL,
-	    sizeof(struct rge_stats), /* maxsize */
+	    RGE_STATS_BUF_SIZE, /* maxsize */
 	    1, /* nsegments */
-	    sizeof(struct rge_stats), /* maxsegsize */
+	    RGE_STATS_BUF_SIZE, /* maxsegsize */
 	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_stats_buf);
@@ -1701,7 +1701,7 @@ rge_alloc_stats_mem(struct rge_softc *sc)
 	error = bus_dmamap_load(sc->sc_dmat_stats_buf,
 	    ss->map,
 	    ss->stats,
-	    sizeof(struct rge_stats),
+	    RGE_STATS_BUF_SIZE,
 	    rge_dma_load_cb,
 	    (void *) &ss->paddr,
 	    BUS_DMA_NOWAIT);

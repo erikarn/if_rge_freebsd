@@ -303,10 +303,14 @@ struct rge_rx_desc {
 #define RGE_RDEXTSTS_IPV4	0x40000000
 #define RGE_RDEXTSTS_IPV6	0x80000000
 
- /*
-  * Statistics counter structure
-  */
-struct rge_stats {
+/*
+ * @brief Statistics counter structure
+ *
+ * This is the layout of the hardware structure that
+ * is populated by the hardware when RGE_DTCCR_* is
+ * appropriately poked.
+ */
+struct rge_hw_mac_stats {
 	uint64_t		rge_tx_ok;
 	uint64_t		rge_rx_ok;
 	uint64_t		rge_tx_er;
@@ -321,6 +325,8 @@ struct rge_stats {
 	uint16_t		rge_tx_abt;
 	uint16_t		rge_tx_undrn;
 } __packed __aligned(sizeof(uint64_t));
+
+#define RGE_STATS_BUF_SIZE	sizeof(struct rge_hw_mac_stats)
 
 #define RGE_STATS_ALIGNMENT	64
 

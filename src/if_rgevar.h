@@ -115,7 +115,7 @@ struct rge_queues {
 struct rge_mac_stats {
 	bus_addr_t		paddr;
 	bus_dmamap_t		map;
-	struct rge_stats	*stats;
+	struct rge_hw_mac_stats	*stats;
 };
 
 struct rge_softc {

@@ -420,23 +420,23 @@ rge_attach(device_t dev)
 	switch (hwrev) {
 	case 0x60900000:
 		sc->rge_type = MAC_R25;
-		device_printf(dev, "RTL8125\n");
+//		device_printf(dev, "RTL8125\n");
 		break;
 	case 0x64100000:
 		sc->rge_type = MAC_R25B;
-		device_printf(dev, "RTL8125B\n");
+//		device_printf(dev, "RTL8125B\n");
 		break;
 	case 0x64900000:
 		sc->rge_type = MAC_R26;
-		device_printf(dev, "RTL8126\n");
+//		device_printf(dev, "RTL8126\n");
 		break;
 	case 0x68800000:
 		sc->rge_type = MAC_R25D;
-		device_printf(dev, "RTL8125D\n");
+//		device_printf(dev, "RTL8125D\n");
 		break;
 	case 0x6c900000:
 		sc->rge_type = MAC_R27;
-		device_printf(dev, "RTL8127\n");
+//		device_printf(dev, "RTL8127\n");
 		break;
 	default:
 		RGE_PRINT_ERROR(sc, "unknown version 0x%08x\n", hwrev);
@@ -471,8 +471,6 @@ rge_attach(device_t dev)
 
 	rge_get_macaddr(sc, eaddr);
 	RGE_UNLOCK(sc);
-
-	RGE_PRINT_INFO(sc, "MAC address %6D\n", eaddr, ":");
 
 	if (rge_allocmem(sc))
 		goto fail;
@@ -1505,11 +1503,16 @@ rge_ifmedia_sts(if_t ifp, struct ifmediareq *ifmr)
 static void
 rge_dma_load_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 {
+#if 0
 	int i;
+#endif
+
 	bus_addr_t *paddr = (bus_addr_t *) arg;
 
+#if 0
 	printf("%s: called; segs=%p, nsegs=%d, error=%d\n",
 	    __func__, segs, nsegs, error);
+#endif
 
 	*paddr = 0;
 
@@ -1521,9 +1524,11 @@ rge_dma_load_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 		return;
 	}
 
+#if 0
 	if (segs != 0)
 		for (i = 0; i < nsegs; i++)
 			printf("  segs[%d]=%p\n", i, segs);
+#endif
 
 	*paddr = segs[0].ds_addr;
 }

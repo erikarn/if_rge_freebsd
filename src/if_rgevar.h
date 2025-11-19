@@ -112,6 +112,12 @@ struct rge_queues {
 	struct rge_rx		q_rx;
 };
 
+struct rge_mac_stats {
+	bus_addr_t		paddr;
+	bus_dmamap_t		map;
+	struct rge_stats	*stats;
+};
+
 struct rge_softc {
 	device_t		sc_dev;
 	if_t			sc_ifp;		/* Ethernet common data */
@@ -166,6 +172,8 @@ struct rge_softc {
 	uint32_t		sc_debug;
 
 	struct rge_drv_stats	sc_drv_stats;
+
+	struct rge_mac_stats	sc_mac_stats;
 };
 
 /*

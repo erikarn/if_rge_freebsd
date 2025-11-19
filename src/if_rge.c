@@ -80,7 +80,9 @@ static void	rge_stop_locked(struct rge_softc *);
 static int	rge_ifmedia_upd(if_t);
 static void	rge_ifmedia_sts(if_t, struct ifmediareq *);
 static int	rge_allocmem(struct rge_softc *);
+static int	rge_alloc_stats_mem(struct rge_softc *);
 static int	rge_freemem(struct rge_softc *);
+static int	rge_free_stats_mem(struct rge_softc *);
 static int	rge_newbuf(struct rge_queues *);
 static void	rge_rx_list_init(struct rge_queues *);
 static void	rge_tx_list_init(struct rge_queues *);
@@ -494,6 +496,8 @@ rge_attach(device_t dev)
 
 	if (rge_allocmem(sc))
 		goto fail;
+	if (rge_alloc_stats_mem(sc))
+		goto fail;
 
 	/* Initialize ifmedia structures. */
 	ifmedia_init(&sc->sc_media, IFM_IMASK, rge_ifmedia_upd,
@@ -598,6 +602,7 @@ rge_detach(device_t dev)
 	/* Free descriptor memory */
 	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: freemem\n", __func__);
 	rge_freemem(sc);
+	rge_free_stats_mem(sc);
 
 	if (sc->sc_ifp) {
 		RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: ifdetach/if_free\n",
@@ -1665,6 +1670,60 @@ error:
 }
 
 /**
+ * @brief Allocate memory for MAC stats.
+ *
+ * Called with the driver lock NOT held.
+ */
+static int
+rge_alloc_stats_mem(struct rge_softc *sc)
+{
+	struct rge_mac_stats *ss = &sc->sc_mac_stats;
+	int error;
+
+	RGE_ASSERT_UNLOCKED(sc);
+
+	/* Allocate DMA'able memory for the TX ring. */
+	error = bus_dmamem_alloc(sc->sc_dmat_stats_buf,
+	    (void **) &ss->stats,
+	        BUS_DMA_WAITOK | BUS_DMA_ZERO| BUS_DMA_COHERENT
+		| BUS_DMA_NOCACHE,
+	    &ss->map);
+	if (error) {
+		RGE_PRINT_ERROR(sc, "%s: error (alloc stats) (%d)\n",
+		    __func__, error);
+		goto error;
+	}
+
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: stats=%p\n", __func__, ss->stats);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: map=%p\n", __func__, ss->map);
+
+	/* Load the map for the TX ring. */
+	error = bus_dmamap_load(sc->sc_dmat_stats_buf,
+	    ss->map,
+	    ss->stats,
+	    sizeof(struct rge_stats),
+	    rge_dma_load_cb,
+	    (void *) &ss->paddr,
+	    BUS_DMA_NOWAIT);
+
+	if ((error != 0) || (ss->paddr == 0)) {
+		RGE_PRINT_ERROR(sc, "%s: error (load stats.map) (%d)\n",
+		    __func__, error);
+		if (error == 0)
+			error = ENXIO;
+		goto error;
+	}
+
+	return (0);
+
+error:
+	rge_free_stats_mem(sc);
+
+	return (error);
+}
+
+
+/**
  * @brief Free the TX/RX DMA buffers and mbufs.
  *
  * Called with the driver lock NOT held.
@@ -1745,6 +1804,25 @@ rge_freemem(struct rge_softc *sc)
 		}
 	}
 
+	return (0);
+}
+
+/**
+ * @brief Free the stats memory.
+ *
+ * Called with the driver lock NOT held.
+ */
+static int
+rge_free_stats_mem(struct rge_softc *sc)
+{
+	struct rge_mac_stats *ss = &sc->sc_mac_stats;
+
+	RGE_ASSERT_UNLOCKED(sc);
+
+	bus_dmamap_unload(sc->sc_dmat_stats_buf, ss->map);
+	if (ss->stats != NULL)
+		bus_dmamem_free(sc->sc_dmat_stats_buf, ss->stats, ss->map);
+	memset(ss, 0, sizeof(*ss));
 	return (0);
 }
 

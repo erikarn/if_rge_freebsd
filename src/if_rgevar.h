@@ -186,6 +186,14 @@ struct rge_softc {
 #define RGE_WRITE_1(sc, reg, val)	\
 	bus_space_write_1(sc->rge_btag, sc->rge_bhandle, reg, val)
 
+#define	RGE_WRITE_BARRIER_4(sc, reg)					\
+	bus_space_barrier(sc->rge_btag, sc->rge_bhandle, reg, 4,	\
+	    BUS_SPACE_BARRIER_WRITE)
+#define	RGE_READ_BARRIER_4(sc, reg)					\
+	bus_space_barrier(sc->rge_btag, sc->rge_bhandle, reg, 4,	\
+	    BUS_SPACE_BARRIER_READ)
+
+
 #define RGE_READ_4(sc, reg)		\
 	bus_space_read_4(sc->rge_btag, sc->rge_bhandle, reg)
 #define RGE_READ_2(sc, reg)		\

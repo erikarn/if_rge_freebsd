@@ -30,6 +30,9 @@
 #define RGE_MAC4		0x0004
 #define RGE_MAR0		0x0008
 #define RGE_MAR4		0x000c
+#define	RGE_DTCCR_LO		0x0010
+#define		RGE_DTCCR_CMD		(1U << 3)
+#define	RGE_DTCCR_HI		0x0014
 #define RGE_TXDESC_ADDR_LO	0x0020
 #define RGE_TXDESC_ADDR_HI	0x0024
 #define RGE_INT_CFG0		0x0034

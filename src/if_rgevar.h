@@ -129,6 +129,7 @@ struct rge_softc {
 	bus_dma_tag_t		sc_dmat_tx_buf;
 	bus_dma_tag_t		sc_dmat_rx_desc;
 	bus_dma_tag_t		sc_dmat_rx_buf;
+	bus_dma_tag_t		sc_dmat_stats_buf;
 
 //	pci_chipset_tag_t	sc_pc;
 //	pcitag_t		sc_tag;

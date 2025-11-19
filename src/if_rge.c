@@ -413,6 +413,25 @@ rge_attach(device_t dev)
 		goto fail;
 	}
 
+	error = bus_dma_tag_create(sc->sc_dmat,
+	    RGE_STATS_ALIGNMENT, /* alignment */
+	    0, /* boundary */
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
+	    NULL,
+	    sizeof(struct rge_stats), /* maxsize */
+	    1, /* nsegments */
+	    sizeof(struct rge_stats), /* maxsegsize */
+	    0, /* flags */
+	    NULL, NULL, /* lockfunc, lockarg */
+	    &sc->sc_dmat_stats_buf);
+	if (error) {
+		RGE_PRINT_ERROR(sc,
+		    "couldn't allocate device RX buffer DMA tag (error %d)\n",
+		    error);
+		goto fail;
+	}
+
+
 	/* Attach sysctl nodes */
 	rge_sysctl_attach(sc);
 
@@ -600,6 +619,9 @@ rge_detach(device_t dev)
 	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat_rx_buf\n", __func__);
 	if (sc->sc_dmat_rx_buf)
 		bus_dma_tag_destroy(sc->sc_dmat_rx_buf);
+	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat_stats_buf\n", __func__);
+	if (sc->sc_dmat_stats_buf)
+		bus_dma_tag_destroy(sc->sc_dmat_stats_buf);
 	RGE_DPRINTF(sc, RGE_DEBUG_SETUP, "%s: sc_dmat\n", __func__);
 	if (sc->sc_dmat)
 		bus_dma_tag_destroy(sc->sc_dmat);

@@ -59,6 +59,7 @@
 #include "if_rge_microcode.h"
 #include "if_rge_debug.h"
 #include "if_rge_sysctl.h"
+#include "if_rge_stats.h"
 
 static int		rge_attach(device_t);
 static int		rge_detach(device_t);
@@ -4295,6 +4296,12 @@ rge_tick(void *arg)
 	RGE_ASSERT_LOCKED(sc);
 
 	rge_link_state(sc);
+
+	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) != 0) {
+		/* TODO: fetch into something persistent */
+		rge_hw_mac_stats_fetch(sc);
+	}
+
 	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);
 }
 

@@ -57,7 +57,6 @@
 #include "if_rge_vendor.h"
 #include "if_rgereg.h"
 #include "if_rgevar.h"
-#include "if_rge_microcode.h"
 #include "if_rge_debug.h"
 #include "if_rge_sysctl.h"
 

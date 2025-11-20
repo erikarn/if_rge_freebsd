@@ -1344,12 +1344,9 @@ rge_stop_locked(struct rge_softc *sc)
 	/* Stop pending TX submissions */
 	sc->sc_stopped = true;
 
-#if 0
-	ifp->if_timer = 0;
-	ifp->if_flags &= ~IFF_RUNNING;
-#endif
 	if_setdrvflagbits(sc->sc_ifp, 0, IFF_DRV_RUNNING);
 	sc->rge_timerintr = 0;
+	sc->sc_watchdog = 0;
 
 	RGE_CLRBIT_4(sc, RGE_RXCFG, RGE_RXCFG_ALLPHYS | RGE_RXCFG_INDIV |
 	    RGE_RXCFG_MULTI | RGE_RXCFG_BROAD | RGE_RXCFG_RUNT |
@@ -2304,6 +2301,7 @@ rge_txeof(struct rge_queues *q)
 		free = 1;
 	}
 
+	/* If we didn't complete any TX descriptors then return 0 */
 	if (free == 0)
 		return (0);
 
@@ -2323,10 +2321,24 @@ rge_txeof(struct rge_queues *q)
 	    "%s: handled %d frames; prod=%d, cons=%d\n", __func__,
 	    ntx, q->q_tx.rge_txq_prodidx, q->q_tx.rge_txq_considx);
 
+	/*
+	 * We processed the ring and hit a descriptor that was still
+	 * owned by the hardware, so there's still pending work.
+	 *
+	 * If we got to the end of the ring and there's no further
+	 * frames owned by the hardware then we can quieten the
+	 * watchdog.
+	 */
 	if (free == 2)
-		taskqueue_enqueue(sc->sc_tq, &sc->sc_tx_task);
+		sc->sc_watchdog = 5;
+	else
+		sc->sc_watchdog = 0;
 
-	/* XXX TODO: kick watchdog timer */
+	/*
+	 * Kick-start the transmit task just in case we have
+	 * more frames available.
+	 */
+	taskqueue_enqueue(sc->sc_tq, &sc->sc_tx_task);
 
 	return (1);
 }
@@ -4218,13 +4230,13 @@ rge_tx_task(void *arg, int npending)
 	int ntx = 0;
 	int idx, free, used;
 
-
 	RGE_DPRINTF(sc, RGE_DEBUG_XMIT, "%s: running\n", __func__);
 
 	RGE_LOCK(sc);
 	sc->sc_drv_stats.tx_task_cnt++;
 
 	if (sc->sc_stopped == true) {
+		sc->sc_watchdog = 0;
 		RGE_UNLOCK(sc);
 		return;
 	}
@@ -4266,6 +4278,7 @@ rge_tx_task(void *arg, int npending)
 	/* Ok, did we queue anything? If so, poke the hardware */
 	if (ntx > 0) {
 		q->q_tx.rge_txq_prodidx = idx;
+		sc->sc_watchdog = 5;
 		RGE_WRITE_2(sc, RGE_TXSTART, RGE_TXSTART_START);
 	}
 
@@ -4293,6 +4306,18 @@ rge_tick(void *arg)
 	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) != 0) {
 		/* TODO: fetch into something persistent */
 		rge_hw_mac_stats_fetch(sc, &sc->sc_mac_stats.lcl_stats);
+	}
+
+	/*
+	 * Handle the TX watchdog.
+	 */
+	if (sc->sc_watchdog > 0) {
+		sc->sc_watchdog--;
+		if (sc->sc_watchdog == 0) {
+			RGE_PRINT_ERROR(sc, "TODO: TX timeout (watchdog)\n");
+			/* XXX TODO */
+			sc->sc_drv_stats.tx_watchdog_timeout_cnt++;
+		}
 	}
 
 	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);

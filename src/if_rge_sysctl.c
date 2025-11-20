@@ -113,6 +113,10 @@ rge_sysctl_drv_stats_attach(struct rge_softc *sc)
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_desc_err_multidesc",
 	    CTLFLAG_RD, &sc->sc_drv_stats.rx_desc_err_multidesc,
 	        "multi-descriptor RX frames (unsupported, so dropped)");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_watchdog_timeout_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_watchdog_timeout_cnt,
+	        "TX watchdog timeouts");
 }
 
 static void

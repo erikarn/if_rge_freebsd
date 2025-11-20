@@ -65,6 +65,11 @@ struct rge_drv_stats {
 	 * RX frames; so count if it happens so it'll be noticed.
 	 */
 	uint64_t		rx_desc_err_multidesc;
+
+	/*
+	 * Number of TX watchdog timeouts.
+	 */
+	uint64_t		tx_watchdog_timeout_cnt;
 };
 
 struct rge_txq {
@@ -172,6 +177,7 @@ struct rge_softc {
 	int			rge_timerintr;
 #define RGE_IMTYPE_NONE		0
 #define RGE_IMTYPE_SIM		1
+	int			sc_watchdog;
 
 	uint32_t		sc_debug;
 

@@ -62,15 +62,15 @@
 #include "if_rge_sysctl.h"
 
 static void
-rge_sysctl_stats_attach(struct rge_softc *sc)
+rge_sysctl_drv_stats_attach(struct rge_softc *sc)
 {
 	struct sysctl_ctx_list *ctx = device_get_sysctl_ctx(sc->sc_dev);
 	struct sysctl_oid *tree = device_get_sysctl_tree(sc->sc_dev);
 	struct sysctl_oid_list *child = SYSCTL_CHILDREN(tree);
 
 	/* Create stats node */
-	tree = SYSCTL_ADD_NODE(ctx, child, OID_AUTO, "stats",
-	    CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "Statistics");
+	tree = SYSCTL_ADD_NODE(ctx, child, OID_AUTO, "drv_stats",
+	    CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "driver statistics");
 	child = SYSCTL_CHILDREN(tree);
 
 	/* Driver stats */
@@ -114,9 +114,44 @@ rge_sysctl_stats_attach(struct rge_softc *sc)
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_desc_err_multidesc",
 	    CTLFLAG_RD, &sc->sc_drv_stats.rx_desc_err_multidesc,
 	        "multi-descriptor RX frames (unsupported, so dropped)");
+}
 
-	/* TODO: mac stats (periodically read from NIC) */
+static void
+rge_sysctl_mac_stats_attach(struct rge_softc *sc)
+{
+	struct sysctl_ctx_list *ctx = device_get_sysctl_ctx(sc->sc_dev);
+	struct sysctl_oid *tree = device_get_sysctl_tree(sc->sc_dev);
+	struct sysctl_oid_list *child = SYSCTL_CHILDREN(tree);
+	struct rge_mac_stats *ss = &sc->sc_mac_stats;
 
+	/* Create stats node */
+	tree = SYSCTL_ADD_NODE(ctx, child, OID_AUTO, "mac_stats",
+	    CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "mac statistics");
+	child = SYSCTL_CHILDREN(tree);
+
+	/* MAC statistics */
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rge_tx_ok", CTLFLAG_RD,
+	    &ss->lcl_stats.rge_tx_ok, "");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rge_rx_ok", CTLFLAG_RD,
+	    &ss->lcl_stats.rge_rx_ok, "");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rge_tx_er", CTLFLAG_RD,
+	    &ss->lcl_stats.rge_tx_er, "");
+	/* uint32_t rge_rx_er */
+
+	/* uint16_t rge_miss_pkt */
+	/* uint16_t rge_fae */
+	/* uint32_t rge_tx_1col */
+	/* uint32_t rge_tx_mcol */
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rge_rx_ok_phy", CTLFLAG_RD,
+	    &ss->lcl_stats.rge_rx_ok_phy, "");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rge_rx_ok_brd", CTLFLAG_RD,
+	    &ss->lcl_stats.rge_rx_ok_brd, "");
+
+	/* uint32_t rge_rx_ok_mul */
+	/* uint16_t rge_tx_abt */
+	/* uint16_t rge_tx_undrn */
 }
 
 void
@@ -130,5 +165,6 @@ rge_sysctl_attach(struct rge_softc *sc)
 	    "control debugging printfs");
 
 	/* Stats */
-	rge_sysctl_stats_attach(sc);
+	rge_sysctl_drv_stats_attach(sc);
+	rge_sysctl_mac_stats_attach(sc);
 }

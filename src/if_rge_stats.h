@@ -18,6 +18,7 @@
 
 struct rge_softc;
 
-extern	int rge_hw_mac_stats_fetch(struct rge_softc *);
+extern	int rge_hw_mac_stats_fetch(struct rge_softc *,
+	    struct rge_hw_mac_stats *);
 
 #endif	/* __IF_RGE_STATS_H__ */

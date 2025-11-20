@@ -4299,7 +4299,7 @@ rge_tick(void *arg)
 
 	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) != 0) {
 		/* TODO: fetch into something persistent */
-		rge_hw_mac_stats_fetch(sc);
+		rge_hw_mac_stats_fetch(sc, &sc->sc_mac_stats.lcl_stats);
 	}
 
 	callout_reset(&sc->sc_timeout, hz, rge_tick, sc);

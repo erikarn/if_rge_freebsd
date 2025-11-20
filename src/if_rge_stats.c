@@ -72,7 +72,7 @@
  * Must be called with the driver lock held.
  */
 int
-rge_hw_mac_stats_fetch(struct rge_softc *sc)
+rge_hw_mac_stats_fetch(struct rge_softc *sc, struct rge_hw_mac_stats *hws)
 {
 	struct rge_mac_stats *ss = &sc->sc_mac_stats;
 	uint32_t reg;
@@ -113,7 +113,9 @@ rge_hw_mac_stats_fetch(struct rge_softc *sc)
 
 	bus_dmamap_sync(sc->sc_dmat_stats_buf, ss->map, BUS_DMASYNC_POSTREAD);
 
-	/* TODO: copy it somewhere useful/persistent, like back to the caller */
+	/* Copy them out - assume host == NIC order for now for bring-up */
+	if (hws != NULL)
+		*hws = *ss->stats;
 
 	return (0);
 }

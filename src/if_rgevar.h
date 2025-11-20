@@ -115,7 +115,11 @@ struct rge_queues {
 struct rge_mac_stats {
 	bus_addr_t		paddr;
 	bus_dmamap_t		map;
+	/* NIC dma buffer, NIC order */
 	struct rge_hw_mac_stats	*stats;
+
+	/* Local copy for retrieval, host order */
+	struct rge_hw_mac_stats	lcl_stats;
 };
 
 struct rge_softc {

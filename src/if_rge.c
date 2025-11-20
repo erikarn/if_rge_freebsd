@@ -2263,6 +2263,8 @@ rge_txeof(struct rge_queues *q)
 	uint32_t txstat;
 	int cons, prod, cur, idx;
 	int free = 0, ntx = 0;
+	int pktlen;
+	bool is_mcast;
 
 	RGE_ASSERT_LOCKED(sc);
 
@@ -2287,6 +2289,8 @@ rge_txeof(struct rge_queues *q)
 		bus_dmamap_sync(sc->sc_dmat_tx_buf, txq->txq_dmamap,
 		    BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc->sc_dmat_tx_buf, txq->txq_dmamap);
+		pktlen = txq->txq_mbuf->m_pkthdr.len;
+		is_mcast = ((txq->txq_mbuf->m_flags & M_MCAST) != 0);
 		m_freem(txq->txq_mbuf);
 		txq->txq_mbuf = NULL;
 		ntx++;
@@ -2296,8 +2300,13 @@ rge_txeof(struct rge_queues *q)
 			if_inc_counter(ifp, IFCOUNTER_COLLISIONS, 1);
 		if ((txstat & htole32(RGE_TDCMDSTS_TXERR)) != 0)
 			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
-		else
+		else {
 			if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
+			if_inc_counter(ifp, IFCOUNTER_OBYTES, pktlen);
+			if (is_mcast)
+				if_inc_counter(ifp, IFCOUNTER_OMCASTS, 1);
+
+		}
 
 		idx = RGE_NEXT_TX_DESC(cur);
 		free = 1;
@@ -4266,7 +4275,9 @@ rge_tx_task(void *arg, int npending)
 			mbufq_prepend(&sc->sc_txq, m);
 			break;
 		}
+
 		/* Note: mbuf is now owned by the tx ring */
+		ETHER_BPF_MTAP(sc->sc_ifp, m);
 
 		/* Update free/idx pointers */
 		free -= used;

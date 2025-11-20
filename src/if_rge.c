@@ -696,6 +696,7 @@ static void
 rge_intr_msi(void *arg)
 {
 	struct mbufq rx_mq;
+	struct epoch_tracker et;
 	struct mbuf *m;
 	struct rge_softc *sc = arg;
 	struct rge_queues *q = sc->sc_queues;
@@ -776,11 +777,13 @@ rge_intr_msi(void *arg)
 done:
 	RGE_UNLOCK(sc);
 
+	NET_EPOCH_ENTER(et);
 	/* Handle any RX frames, outside of the driver lock */
 	while ((m = mbufq_dequeue(&rx_mq)) != NULL) {
 		sc->sc_drv_stats.recv_input_cnt++;
 		if_input(sc->sc_ifp, m);
 	}
+	NET_EPOCH_EXIT(et);
 
 	(void) claimed;
 }

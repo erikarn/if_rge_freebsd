@@ -2296,6 +2296,8 @@ rge_txeof(struct rge_queues *q)
 			if_inc_counter(ifp, IFCOUNTER_COLLISIONS, 1);
 		if ((txstat & htole32(RGE_TDCMDSTS_TXERR)) != 0)
 			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
+		else
+			if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 
 		idx = RGE_NEXT_TX_DESC(cur);
 		free = 1;

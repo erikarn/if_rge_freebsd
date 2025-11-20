@@ -1015,8 +1015,6 @@ rge_qflush_if(if_t ifp)
 {
 	struct rge_softc *sc = if_getsoftc(ifp);
 
-	RGE_PRINT_TODO(sc, "%s: called!\n", __func__);
-
 	/* TODO: this should iterate over the TXQs */
 	RGE_LOCK(sc);
 	rge_txq_flush_mbufs(sc);

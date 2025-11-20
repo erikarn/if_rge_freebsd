@@ -87,6 +87,11 @@ rge_hw_mac_stats_fetch(struct rge_softc *sc, struct rge_hw_mac_stats *hws)
 
 	bus_dmamap_sync(sc->sc_dmat_stats_buf, ss->map, BUS_DMASYNC_PREREAD);
 
+#if 0
+                if (extend_stats)
+                        re_set_mac_ocp_bit(sc, 0xEA84, (BIT_1 | BIT_0));
+#endif
+
 	/* Program in the memory page to write data into */
 	RGE_WRITE_4(sc, RGE_DTCCR_HI, RGE_ADDR_HI(ss->paddr));
 	RGE_WRITE_BARRIER_4(sc, RGE_DTCCR_HI);
@@ -107,6 +112,11 @@ rge_hw_mac_stats_fetch(struct rge_softc *sc, struct rge_hw_mac_stats *hws)
 			break;
 		DELAY(10);
 	}
+
+#if 0
+                if (extend_stats)
+                        re_clear_mac_ocp_bit(sc, 0xEA84, (BIT_1 | BIT_0));
+#endif
 
 	if ((reg & RGE_DTCCR_CMD) != 0)
 		return (ETIMEDOUT);

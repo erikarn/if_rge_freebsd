@@ -319,14 +319,43 @@ struct rge_hw_mac_stats {
 	uint64_t		rge_tx_er;
 	uint32_t		rge_rx_er;
 	uint16_t		rge_miss_pkt;
-	uint16_t		rge_fae;
-	uint32_t		rge_tx_1col;
-	uint32_t		rge_tx_mcol;
-	uint64_t		rge_rx_ok_phy;
-	uint64_t		rge_rx_ok_brd;
-	uint32_t		rge_rx_ok_mul;
+	uint16_t		rge_fae; /* frame align errors */
+	uint32_t		rge_tx_1col; /* one collision */
+	uint32_t		rge_tx_mcol; /* multple collisions */
+	uint64_t		rge_rx_ok_phy; /* unicast */
+	uint64_t		rge_rx_ok_brd; /* broadcasts */
+	uint32_t		rge_rx_ok_mul; /* multicasts */
 	uint16_t		rge_tx_abt;
 	uint16_t		rge_tx_undrn;
+
+	/* extended */
+	uint64_t		re_tx_octets;
+	uint64_t		re_rx_octets;
+	uint64_t		re_rx_multicast64;
+	uint64_t		re_tx_unicast64;
+	uint64_t		re_tx_broadcast64;
+	uint64_t		re_tx_multicast64;
+	uint32_t		re_tx_pause_on;
+	uint32_t		re_tx_pause_off;
+	uint32_t		re_tx_pause_all;
+	uint32_t		re_tx_deferred;
+	uint32_t		re_tx_late_collision;
+	uint32_t		re_tx_all_collision;
+	uint32_t		re_tx_aborted32;
+	uint32_t		re_align_errors32;
+	uint32_t		re_rx_frame_too_long;
+	uint32_t		re_rx_runt;
+	uint32_t		re_rx_pause_on;
+	uint32_t		re_rx_pause_off;
+	uint32_t		re_rx_pause_all;
+	uint32_t		re_rx_unknown_opcode;
+	uint32_t		re_rx_mac_error;
+	uint32_t		re_tx_underrun32;
+	uint32_t		re_rx_mac_missed;
+	uint32_t		re_rx_tcam_dropped;
+	uint32_t		re_tdu;
+	uint32_t		re_rdu;
+
 } __packed __aligned(sizeof(uint64_t));
 
 #define RGE_STATS_BUF_SIZE	sizeof(struct rge_hw_mac_stats)

@@ -48,13 +48,11 @@
 
 #include <machine/bus.h>
 #include <machine/resource.h>
-//#include <machine/intr.h>
 
 #include <dev/mii/mii.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
-//#include <dev/pci/pcidevs.h>
 
 #include "if_rge_vendor.h"
 #include "if_rgereg.h"
@@ -62,6 +60,64 @@
 #include "if_rge_microcode.h"
 #include "if_rge_debug.h"
 #include "if_rge_sysctl.h"
+
+static void
+rge_sysctl_stats_attach(struct rge_softc *sc)
+{
+	struct sysctl_ctx_list *ctx = device_get_sysctl_ctx(sc->sc_dev);
+	struct sysctl_oid *tree = device_get_sysctl_tree(sc->sc_dev);
+	struct sysctl_oid_list *child = SYSCTL_CHILDREN(tree);
+
+	/* Create stats node */
+	tree = SYSCTL_ADD_NODE(ctx, child, OID_AUTO, "stats",
+	    CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "Statistics");
+	child = SYSCTL_CHILDREN(tree);
+
+	/* Driver stats */
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_call_cnt", CTLFLAG_RD,
+	    &sc->sc_drv_stats.transmit_call_cnt, "Calls to rge_transmit");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_stopped_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_call_cnt,
+	        "rge_transmit calls to a stopped interface");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_full_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_call_cnt,
+	        "rge_transmit calls to a full tx queue");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_queued_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_call_cnt,
+	        "rge_transmit calls which queued a frame");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "intr_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.intr_cnt,
+	        "incoming interrupts");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "intr_system_errcnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.intr_system_err_cnt,
+	        "INTR_SYSTEM_ERR interrupt leading to a hardware reset");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rxeof_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rxeof_cnt,
+	        "calls to rxeof() to process RX frames");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "txeof_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.txeof_cnt,
+	        "calls to rxeof() to process TX frame completions");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "link_state_change_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.link_state_change_cnt,
+	        "link state changes");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_task_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_task_cnt,
+	        "calls to tx_task task to send queued frames");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "recv_input_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.recv_input_cnt,
+	        "calls to if_input to process frames");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_desc_err_multidesc",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_desc_err_multidesc,
+	        "multi-descriptor RX frames (unsupported, so dropped)");
+
+	/* TODO: mac stats (periodically read from NIC) */
+
+}
 
 void
 rge_sysctl_attach(struct rge_softc *sc)
@@ -72,4 +128,7 @@ rge_sysctl_attach(struct rge_softc *sc)
 	SYSCTL_ADD_UINT(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
 	    "debug", CTLFLAG_RW, &sc->sc_debug, 0,
 	    "control debugging printfs");
+
+	/* Stats */
+	rge_sysctl_stats_attach(sc);
 }

@@ -76,13 +76,13 @@ rge_sysctl_drv_stats_attach(struct rge_softc *sc)
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_call_cnt", CTLFLAG_RD,
 	    &sc->sc_drv_stats.transmit_call_cnt, "Calls to rge_transmit");
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_stopped_cnt",
-	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_call_cnt,
+	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_stopped_cnt,
 	        "rge_transmit calls to a stopped interface");
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_full_cnt",
-	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_call_cnt,
+	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_full_cnt,
 	        "rge_transmit calls to a full tx queue");
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "transmit_queued_cnt",
-	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_call_cnt,
+	    CTLFLAG_RD, &sc->sc_drv_stats.transmit_queued_cnt,
 	        "rge_transmit calls which queued a frame");
 
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "intr_cnt",

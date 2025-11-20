@@ -147,19 +147,6 @@ void		rge_wol_power(struct rge_softc *);
 #endif
 #endif
 
-static const struct {
-	uint16_t reg;
-	uint16_t val;
-}  mac_r25_mcu[] = {
-	MAC_R25_MCU
-}, mac_r25b_mcu[] = {
-	MAC_R25B_MCU
-}, mac_r25d_mcu[] = {
-	MAC_R25D_MCU
-}, mac_r26_mcu[] = {
-	MAC_R26_MCU
-};
-
 struct rge_matchid {
 	uint16_t vendor;
 	uint16_t device;

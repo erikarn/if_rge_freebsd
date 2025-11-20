@@ -1075,14 +1075,19 @@ rge_init_locked(struct rge_softc *sc)
 
 	/* Don't double-init the hardware */
 	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) != 0) {
-		RGE_PRINT_ERROR(sc, "%s: called whilst running?\n", __func__);
+		/*
+		 * Note: I'm leaving this disabled by default; however
+		 * I'm leaving it in here so I can figure out what's
+		 * causing this to be initialised both from the ioctl
+		 * API and if_init() API.
+		 */
+//		RGE_PRINT_ERROR(sc, "%s: called whilst running?\n", __func__);
 		return;
 	}
 
 	/*
-	 * XXX TODO: calling stop before start feels hacky?
-	 * Does if_re / if_rl do it?  I'd rather track driver start
-	 * and stop state, and make sure I explicitly call them?
+	 * Bring the hardware down so we know it's in a good known
+	 * state before we bring it up in a good known state.
 	 */
 	rge_stop_locked(sc);
 

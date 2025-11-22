@@ -149,7 +149,20 @@ rge_sysctl_drv_stats_attach(struct rge_softc *sc)
 	    CTLFLAG_RD, &sc->sc_drv_stats.tx_offload_vlan_tag_set,
 	    "Number of frames TX'ed with VLAN offload tag set");
 
-	/* RX checksum counters */
+	/* RX counters */
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_ether_csum_err",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_ether_csum_err,
+	    "Number of frames RX'ed with invalid ethernet CRC");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_vlan_tag",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_vlan_tag,
+	    "Number of frames RX'ed with offload VLAN tag");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_jumbo_frag",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_desc_jumbo_frag,
+	    "Number of descriptors RX'ed as part of a multi-descriptor frame");
+
+	/* RX checksum offload counters */
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_csum_ipv4_exists",
 	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_csum_ipv4_exists,
 	    "Number of frames RX'ed with IPv4 checksum offload set");

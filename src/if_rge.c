@@ -2215,11 +2215,6 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		    ((uint32_t *) cur_rx)[6],
 		    ((uint32_t *) cur_rx)[7]);
 
-		/*
-		 * TODO: strip out the multi-frame RX for now; just
-		 * expect SOF + EOF to be set, error out if not.
-		 */
-
 		if ((rxstat & RGE_RDCMDSTS_SOF) != 0) {
 			if (q->q_rx.rge_head != NULL) {
 				sc->sc_drv_stats.rx_desc_err_multidesc++;
@@ -2245,7 +2240,9 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		m = q->q_rx.rge_head;
 		m->m_pkthdr.len += mlen;
 
+		/* Ethernet CRC error */
 		if (rxstat & RGE_RDCMDSTS_RXERRSUM) {
+			sc->sc_drv_stats.rx_ether_csum_err++;
 			if_inc_counter(sc->sc_ifp, IFCOUNTER_IERRORS, 1);
 			m_freem(m);
 			q->q_rx.rge_head = NULL;
@@ -2253,8 +2250,19 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 			continue;
 		}
 
-		if ((rxstat & RGE_RDCMDSTS_EOF) == 0)
+		/*
+		 * This mbuf is part of a multi-descriptor frame,
+		 * so count it towards that.
+		 *
+		 * Yes, this means we won't be counting the
+		 * final descriptor/mbuf as part of a multi-descriptor
+		 * frame; if someone wishes to do that then it
+		 * shouldn't be too hard to add.
+		 */
+		if ((rxstat & RGE_RDCMDSTS_EOF) == 0) {
+			sc->sc_drv_stats.rx_desc_jumbo_frag++;
 			continue;
+		}
 
 		q->q_rx.rge_head = NULL;
 		q->q_rx.rge_tail = &q->q_rx.rge_head;
@@ -2309,7 +2317,7 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		}
 
 		if (extsts & RGE_RDEXTSTS_VTAG) {
-			/* XXX counter */
+			sc->sc_drv_stats.rx_offload_vlan_tag++;
 			m->m_pkthdr.ether_vtag =
 			    ntohs(extsts & RGE_RDEXTSTS_VLAN_MASK);
 			m->m_flags |= M_VLANTAG;

@@ -809,8 +809,9 @@ rge_tx_list_sync(struct rge_softc *sc, struct rge_queues *q,
  * @param q	TX queue ring
  * @param m	mbuf to enqueue
  * @returns	if the mbuf is enqueued, it's consumed here and the number of
- * 		TX descriptors used is returned; if there's an error then
- * 		0 is returned and the mbuf isn't consumed.
+ * 		TX descriptors used is returned; if there's no space then 0 is
+ *		returned; if the mbuf couldn't be defragged and the caller
+ *		should free it then -1 is returned.
  */
 static int
 rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
@@ -843,7 +844,7 @@ rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 			break;
 		/* FALLTHROUGH */
 	default:
-		return (0);
+		return (-1);
 	}
 
 	bus_dmamap_sync(sc->sc_dmat_tx_buf, txmap, BUS_DMASYNC_PREWRITE);
@@ -4344,12 +4345,21 @@ rge_tx_task(void *arg, int npending)
 
 		/* Attempt to encap */
 		used = rge_encap(sc, q, m, idx);
-		if (used == 0) {
+		if (used < 0) {
+			if_inc_counter(sc->sc_ifp, IFCOUNTER_OQDROPS, 1);
+			m_freem(m);
+			continue;
+		} else if (used == 0) {
 			mbufq_prepend(&sc->sc_txq, m);
 			break;
 		}
 
-		/* Note: mbuf is now owned by the tx ring */
+		/*
+		 * Note: mbuf is now owned by the tx ring, but we hold the
+		 * lock so it's safe to pass it up here to be copied without
+		 * worrying the TX task will run and dequeue/free it before
+		 * we get a shot at it.
+		 */
 		ETHER_BPF_MTAP(sc->sc_ifp, m);
 
 		/* Update free/idx pointers */

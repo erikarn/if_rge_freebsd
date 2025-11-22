@@ -61,6 +61,8 @@
 #include "if_rge_sysctl.h"
 #include "if_rge_stats.h"
 
+#define	RGE_CSUM_FEATURES		(CSUM_IP | CSUM_TCP | CSUM_UDP)
+
 static int		rge_attach(device_t);
 static int		rge_detach(device_t);
 
@@ -192,17 +194,28 @@ rge_attach_if(struct rge_softc *sc, const char *eaddr)
 	if_setioctlfn(sc->sc_ifp, rge_ioctl);
 	if_settransmitfn(sc->sc_ifp, rge_transmit_if);
 	if_setqflushfn(sc->sc_ifp, rge_qflush_if);
-	if_setcapabilities(sc->sc_ifp, 0);
-	if_setcapenable(sc->sc_ifp, 0);
+
+	/* Set offload/TSO as appropriate */
+	if_sethwassist(sc->sc_ifp, CSUM_IP | CSUM_TCP | CSUM_UDP | CSUM_TSO);
+	if_setcapabilities(sc->sc_ifp, IFCAP_HWCSUM | IFCAP_TSO4 |
+	    IFCAP_VLAN_HWTSO);
+	if_setcapenable(sc->sc_ifp, if_getcapabilities(sc->sc_ifp));
+
+	/* TODO: set WOL */
 
 	/* Attach interface */
 	ether_ifattach(sc->sc_ifp, eaddr);
 	sc->sc_ether_attached = true;
 
-	/* TODO: set offload/TSO as appropriate */
-	/* TODO: set jumbo tx/rx; max MTU */
-	/* TODO: set WOL */
-	/* TODO: set vlan as appropriate */
+	/* post ether_ifattach() bits */
+
+	/* VLAN capabilities */
+	if_setcapabilitiesbit(sc->sc_ifp, IFCAP_VLAN_MTU |
+	    IFCAP_VLAN_HWTAGGING, 0);
+	if_setcapabilitiesbit(sc->sc_ifp, IFCAP_VLAN_HWCSUM, 0);
+	if_setcapenable(sc->sc_ifp, if_getcapabilities(sc->sc_ifp));
+
+	if_setifheaderlen(sc->sc_ifp, sizeof(struct ether_vlan_header));
 
 	/* TODO: is this needed for iftransmit? */
 	if_setsendqlen(sc->sc_ifp, RGE_TX_LIST_CNT - 1);
@@ -836,29 +849,24 @@ rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 
 	bus_dmamap_sync(sc->sc_dmat_tx_buf, txmap, BUS_DMASYNC_PREWRITE);
 
-#if 0
 	/*
 	 * Set RGE_TDEXTSTS_IPCSUM if any checksum offloading is requested.
 	 * Otherwise, RGE_TDEXTSTS_TCPCSUM / RGE_TDEXTSTS_UDPCSUM does not
 	 * take affect.
 	 */
-	if ((m->m_pkthdr.csum_flags &
-	    (M_IPV4_CSUM_OUT | M_TCP_CSUM_OUT | M_UDP_CSUM_OUT)) != 0) {
+	if ((m->m_pkthdr.csum_flags & RGE_CSUM_FEATURES) != 0) {
+		/* XXX counters */
 		cflags |= RGE_TDEXTSTS_IPCSUM;
-		if (m->m_pkthdr.csum_flags & M_TCP_CSUM_OUT)
+		if (m->m_pkthdr.csum_flags & CSUM_TCP)
 			cflags |= RGE_TDEXTSTS_TCPCSUM;
-		if (m->m_pkthdr.csum_flags & M_UDP_CSUM_OUT)
+		if (m->m_pkthdr.csum_flags & CSUM_UDP)
 			cflags |= RGE_TDEXTSTS_UDPCSUM;
 	}
-#endif
 
-#if 0
-	/* Set up hardware VLAN tagging. */
-#if NVLAN > 0
+	/* Set up hardware VLAN tagging */
+	/* XXX counter */
 	if (m->m_flags & M_VLANTAG)
-		cflags |= swap16(m->m_pkthdr.ether_vtag) | RGE_TDEXTSTS_VTAG;
-#endif
-#endif
+		cflags |= htole16(m->m_pkthdr.ether_vtag) | RGE_TDEXTSTS_VTAG;
 
 	cur = idx;
 	for (i = 1; i < nsegs; i++) {
@@ -944,7 +952,22 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	int error = 0;
 
 	switch (cmd) {
-	/* TODO:SIOCSIFMTU */
+	case SIOCSIFMTU:
+		/* Note: no hardware reinit is required */
+		if (ifr->ifr_mtu < ETHERMIN || ifr->ifr_mtu > RGE_JUMBO_MTU) {
+			error = EINVAL;
+			break;
+		}
+		if (if_getmtu(ifp) != ifr->ifr_mtu)
+			if_setmtu(ifp, ifr->ifr_mtu);
+
+		/*
+		 * TODO: validate if there's a limit on TX frame size and
+		 * TSO like there is on if_re.
+		 */
+		VLAN_CAPABILITIES(ifp);
+		break;
+
 	case SIOCSIFFLAGS:
 		RGE_LOCK(sc);
 		if ((if_getflags(ifp) & IFF_UP) != 0) {
@@ -977,7 +1000,72 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	case SIOCSIFMEDIA:
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
 		break;
-	/* TODO: SIOCSIFCAP */
+	case SIOCSIFCAP:
+		{
+			int mask;
+			bool reinit = false;
+
+			/* Get the mask of changed bits */
+			mask = ifr->ifr_reqcap ^ if_getcapenable(ifp);
+
+			/*
+			 * Locked so we don't have a narrow window where frames
+			 * are being processed with the updated flags but the
+			 * hardware configuration hasn't yet changed.
+			 */
+			RGE_LOCK(sc);
+
+			if ((mask & IFCAP_TXCSUM) != 0 &&
+			    (if_getcapabilities(ifp) & IFCAP_TXCSUM) != 0) {
+				if_togglecapenable(ifp, IFCAP_TXCSUM);
+				if ((if_getcapenable(ifp) & IFCAP_TXCSUM) != 0)
+					if_sethwassistbits(ifp, RGE_CSUM_FEATURES, 0);
+				else
+					if_sethwassistbits(ifp, 0, RGE_CSUM_FEATURES);
+				reinit = 1;
+			}
+
+			/* Note: TX doesn't require reinit */
+			if ((mask & IFCAP_TSO4) != 0 &&
+			    (if_getcapabilities(ifp) & IFCAP_TSO4) != 0) {
+				if_togglecapenable(ifp, IFCAP_TSO4);
+				if ((IFCAP_TSO4 & if_getcapenable(ifp)) != 0)
+					if_sethwassistbits(ifp, CSUM_TSO, 0);
+				else
+					if_sethwassistbits(ifp, 0, CSUM_TSO);
+			}
+
+			/* Note: TX doesn't require reinit */
+			if ((mask & IFCAP_VLAN_HWTSO) != 0 &&
+			    (if_getcapabilities(ifp) & IFCAP_VLAN_HWTSO) != 0)
+				if_togglecapenable(ifp, IFCAP_VLAN_HWTSO);
+
+			if ((mask & IFCAP_VLAN_HWTAGGING) != 0 &&
+			    (if_getcapabilities(ifp) & IFCAP_VLAN_HWTAGGING) != 0) {
+				if_togglecapenable(ifp, IFCAP_VLAN_HWTAGGING);
+				/* TSO over VLAN requires VLAN hardware tagging. */
+				if ((if_getcapenable(ifp) & IFCAP_VLAN_HWTAGGING) == 0)
+					if_setcapenablebit(ifp, 0, IFCAP_VLAN_HWTSO);
+				reinit = 1;
+			}
+
+			/* TODO: WOL */
+
+			if ((mask & IFCAP_RXCSUM) != 0 &&
+			    (if_getcapabilities(ifp) & IFCAP_RXCSUM) != 0) {
+				if_togglecapenable(ifp, IFCAP_RXCSUM);
+				reinit = 1;
+			}
+
+			if (reinit && if_getdrvflags(ifp) & IFF_DRV_RUNNING) {
+				if_setdrvflagbits(ifp, 0, IFF_DRV_RUNNING);
+				rge_init_locked(sc);
+			}
+
+			RGE_UNLOCK(sc);
+			VLAN_CAPABILITIES(ifp);
+		}
+		break;
 	default:
 		error = ether_ioctl(ifp, cmd, data);
 		break;
@@ -1281,10 +1369,17 @@ rge_init_locked(struct rge_softc *sc)
 	} else
 		RGE_MAC_CLRBIT(sc, 0xe092, 0x00ff);
 
-	if (if_getcapabilities(sc->sc_ifp) & IFCAP_VLAN_HWTAGGING)
+	/* Enable/disable HW VLAN tagging based on enabled capability */
+	if ((if_getcapabilities(sc->sc_ifp) & IFCAP_VLAN_HWTAGGING) != 0)
 		RGE_SETBIT_4(sc, RGE_RXCFG, RGE_RXCFG_VLANSTRIP);
+	else
+		RGE_CLRBIT_4(sc, RGE_RXCFG, RGE_RXCFG_VLANSTRIP);
 
-	RGE_SETBIT_2(sc, RGE_CPLUSCMD, RGE_CPLUSCMD_RXCSUM);
+	/* Enable/disable RX checksum based on enabled capability */
+	if ((if_getcapenable(sc->sc_ifp) & IFCAP_RXCSUM) != 0)
+		RGE_SETBIT_2(sc, RGE_CPLUSCMD, RGE_CPLUSCMD_RXCSUM);
+	else
+		RGE_CLRBIT_2(sc, RGE_CPLUSCMD, RGE_CPLUSCMD_RXCSUM);
 	RGE_READ_2(sc, RGE_CPLUSCMD);
 
 	/* Set Maximum frame size. */
@@ -2200,32 +2295,33 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 
 		/* Check IP header checksum. */
 		if ((if_getcapenable(sc->sc_ifp) & IFCAP_RXCSUM) != 0) {
-#if 0
 			/* Does it exist for IPv4? */
+			/* XXX counter */
 			if (extsts & RGE_RDEXTSTS_IPV4)
 				m->m_pkthdr.csum_flags |=
 				    CSUM_IP_CHECKED;
+			/* XXX counter */
 			if (((extsts & RGE_RDEXTSTS_IPCSUMERR) == 0)
 			    && ((extsts & RGE_RDEXTSTS_IPV4) != 0))
 				m->m_pkthdr.csum_flags |=
 				    CSUM_IP_VALID;
-#endif
 
-#if 0
-		/* XXX TODO: this is still openbsd code */
-		/* Check TCP/UDP checksum. */
-		if ((extsts & (RGE_RDEXTSTS_IPV4 | RGE_RDEXTSTS_IPV6)) &&
-		    (((extsts & RGE_RDEXTSTS_TCPPKT) &&
-		    !(extsts & RGE_RDEXTSTS_TCPCSUMERR)) ||
-		    ((extsts & RGE_RDEXTSTS_UDPPKT) &&
-		    !(extsts & RGE_RDEXTSTS_UDPCSUMERR))))
-			m->m_pkthdr.csum_flags |= M_TCP_CSUM_IN_OK |
-			    M_UDP_CSUM_IN_OK;
-#endif
-
-		}
+			/* XXX TODO: this is still openbsd code */
+			/* Check TCP/UDP checksum. */
+			if ((extsts & (RGE_RDEXTSTS_IPV4 | RGE_RDEXTSTS_IPV6)) &&
+			    (((extsts & RGE_RDEXTSTS_TCPPKT) &&
+			    !(extsts & RGE_RDEXTSTS_TCPCSUMERR)) ||
+			    ((extsts & RGE_RDEXTSTS_UDPPKT) &&
+			    !(extsts & RGE_RDEXTSTS_UDPCSUMERR)))) {
+				/* XXX counter */
+				m->m_pkthdr.csum_flags |=
+				    CSUM_DATA_VALID|CSUM_PSEUDO_HDR;
+				m->m_pkthdr.csum_data = 0xffff;
+			}
+	}
 
 		if (extsts & RGE_RDEXTSTS_VTAG) {
+			/* XXX counter */
 			m->m_pkthdr.ether_vtag =
 			    ntohs(extsts & RGE_RDEXTSTS_VLAN_MASK);
 			m->m_flags |= M_VLANTAG;

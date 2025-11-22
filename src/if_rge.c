@@ -71,10 +71,6 @@ int		rge_activate(struct device *, int);
 #endif
 static void	rge_intr_msi(void *);
 static int	rge_ioctl(struct ifnet *, u_long, caddr_t);
-#if 0
-void		rge_start(struct ifqueue *);
-void		rge_watchdog(struct ifnet *);
-#endif
 static int	rge_transmit_if(if_t, struct mbuf *);
 static void	rge_qflush_if(if_t);
 static void	rge_init_if(void *);
@@ -1060,20 +1056,6 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 
 	return (error);
 }
-
-#if 0
-
-void
-rge_watchdog(struct ifnet *ifp)
-{
-	struct rge_softc *sc = ifp->if_softc;
-
-	RGE_PRINT_ERROR("%s: watchdog timeout\n", sc->sc_dev.dv_xname);
-	ifp->if_oerrors++;
-
-	rge_init(ifp);
-}
-#endif
 
 static void
 rge_qflush_if(if_t ifp)
@@ -4427,10 +4409,13 @@ rge_tick(void *arg)
 
 	rge_link_state(sc);
 
-	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) != 0) {
-		/* TODO: fetch into something persistent */
+	/*
+	 * Since we don't have any other place yet to trigger/test this,
+	 * let's do it here every second and just bite the driver
+	 * blocking for a little bit whilst it happens.
+	 */
+	if ((if_getdrvflags(sc->sc_ifp) & IFF_DRV_RUNNING) != 0)
 		rge_hw_mac_stats_fetch(sc, &sc->sc_mac_stats.lcl_stats);
-	}
 
 	/*
 	 * Handle the TX watchdog.
@@ -4438,8 +4423,8 @@ rge_tick(void *arg)
 	if (sc->sc_watchdog > 0) {
 		sc->sc_watchdog--;
 		if (sc->sc_watchdog == 0) {
-			RGE_PRINT_ERROR(sc, "TODO: TX timeout (watchdog)\n");
-			/* XXX TODO */
+			RGE_PRINT_ERROR(sc, "TX timeout (watchdog)\n");
+			rge_init_locked(sc);
 			sc->sc_drv_stats.tx_watchdog_timeout_cnt++;
 		}
 	}

@@ -195,10 +195,9 @@ rge_attach_if(struct rge_softc *sc, const char *eaddr)
 	if_settransmitfn(sc->sc_ifp, rge_transmit_if);
 	if_setqflushfn(sc->sc_ifp, rge_qflush_if);
 
-	/* Set offload/TSO as appropriate */
-	if_sethwassist(sc->sc_ifp, CSUM_IP | CSUM_TCP | CSUM_UDP | CSUM_TSO);
-	if_setcapabilities(sc->sc_ifp, IFCAP_HWCSUM | IFCAP_TSO4 |
-	    IFCAP_VLAN_HWTSO);
+	/* Set offload as appropriate */
+	if_sethwassist(sc->sc_ifp, CSUM_IP | CSUM_TCP | CSUM_UDP);
+	if_setcapabilities(sc->sc_ifp, IFCAP_HWCSUM);
 	if_setcapenable(sc->sc_ifp, if_getcapabilities(sc->sc_ifp));
 
 	/* TODO: set WOL */
@@ -961,10 +960,6 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		if (if_getmtu(ifp) != ifr->ifr_mtu)
 			if_setmtu(ifp, ifr->ifr_mtu);
 
-		/*
-		 * TODO: validate if there's a limit on TX frame size and
-		 * TSO like there is on if_re.
-		 */
 		VLAN_CAPABILITIES(ifp);
 		break;
 
@@ -1025,27 +1020,9 @@ rge_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 				reinit = 1;
 			}
 
-			/* Note: TX doesn't require reinit */
-			if ((mask & IFCAP_TSO4) != 0 &&
-			    (if_getcapabilities(ifp) & IFCAP_TSO4) != 0) {
-				if_togglecapenable(ifp, IFCAP_TSO4);
-				if ((IFCAP_TSO4 & if_getcapenable(ifp)) != 0)
-					if_sethwassistbits(ifp, CSUM_TSO, 0);
-				else
-					if_sethwassistbits(ifp, 0, CSUM_TSO);
-			}
-
-			/* Note: TX doesn't require reinit */
-			if ((mask & IFCAP_VLAN_HWTSO) != 0 &&
-			    (if_getcapabilities(ifp) & IFCAP_VLAN_HWTSO) != 0)
-				if_togglecapenable(ifp, IFCAP_VLAN_HWTSO);
-
 			if ((mask & IFCAP_VLAN_HWTAGGING) != 0 &&
 			    (if_getcapabilities(ifp) & IFCAP_VLAN_HWTAGGING) != 0) {
 				if_togglecapenable(ifp, IFCAP_VLAN_HWTAGGING);
-				/* TSO over VLAN requires VLAN hardware tagging. */
-				if ((if_getcapenable(ifp) & IFCAP_VLAN_HWTAGGING) == 0)
-					if_setcapenablebit(ifp, 0, IFCAP_VLAN_HWTSO);
 				reinit = 1;
 			}
 

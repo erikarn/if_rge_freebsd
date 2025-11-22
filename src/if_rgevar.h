@@ -70,6 +70,23 @@ struct rge_drv_stats {
 	 * Number of TX watchdog timeouts.
 	 */
 	uint64_t		tx_watchdog_timeout_cnt;
+
+	uint64_t		tx_encap_cnt;
+	uint64_t		tx_encap_refrag_cnt;
+	uint64_t		tx_encap_err_toofrag;
+	uint64_t		tx_offload_ip_csum_set;
+	uint64_t		tx_offload_tcp_csum_set;
+	uint64_t		tx_offload_udp_csum_set;
+	uint64_t		tx_offload_vlan_tag_set;
+
+	uint64_t		rx_offload_csum_ipv4_exists;
+	uint64_t		rx_offload_csum_ipv4_valid;
+
+	uint64_t		rx_offload_csum_tcp_exists;
+	uint64_t		rx_offload_csum_tcp_valid;
+
+	uint64_t		rx_offload_csum_udp_exists;
+	uint64_t		rx_offload_csum_udp_valid;
 };
 
 struct rge_txq {

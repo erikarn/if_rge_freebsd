@@ -829,6 +829,8 @@ rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 	txq = &q->q_tx.rge_txq[idx];
 	txmap = txq->txq_dmamap;
 
+	sc->sc_drv_stats.tx_encap_cnt++;
+
 	nsegs = RGE_TX_NSEGS;
 	error = bus_dmamap_load_mbuf_sg(sc->sc_dmat_tx_buf, txmap, m,
 	    seg, &nsegs, BUS_DMA_NOWAIT);
@@ -837,6 +839,7 @@ rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 	case 0:
 		break;
 	case EFBIG: /* mbuf chain is too fragmented */
+		sc->sc_drv_stats.tx_encap_refrag_cnt++;
 		nsegs = RGE_TX_NSEGS;
 		if (m_defrag(m, M_NOWAIT) == 0 &&
 		    bus_dmamap_load_mbuf_sg(sc->sc_dmat_tx_buf, txmap, m,
@@ -844,6 +847,7 @@ rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 			break;
 		/* FALLTHROUGH */
 	default:
+		sc->sc_drv_stats.tx_encap_err_toofrag++;
 		return (-1);
 	}
 
@@ -855,18 +859,23 @@ rge_encap(struct rge_softc *sc, struct rge_queues *q, struct mbuf *m, int idx)
 	 * take affect.
 	 */
 	if ((m->m_pkthdr.csum_flags & RGE_CSUM_FEATURES) != 0) {
-		/* XXX counters */
 		cflags |= RGE_TDEXTSTS_IPCSUM;
-		if (m->m_pkthdr.csum_flags & CSUM_TCP)
+		sc->sc_drv_stats.tx_offload_ip_csum_set++;
+		if (m->m_pkthdr.csum_flags & CSUM_TCP) {
+			sc->sc_drv_stats.tx_offload_tcp_csum_set++;
 			cflags |= RGE_TDEXTSTS_TCPCSUM;
-		if (m->m_pkthdr.csum_flags & CSUM_UDP)
+		}
+		if (m->m_pkthdr.csum_flags & CSUM_UDP) {
+			sc->sc_drv_stats.tx_offload_udp_csum_set++;
 			cflags |= RGE_TDEXTSTS_UDPCSUM;
+		}
 	}
 
 	/* Set up hardware VLAN tagging */
-	/* XXX counter */
-	if (m->m_flags & M_VLANTAG)
+	if (m->m_flags & M_VLANTAG) {
+		sc->sc_drv_stats.tx_offload_vlan_tag_set++;
 		cflags |= htole16(m->m_pkthdr.ether_vtag) | RGE_TDEXTSTS_VTAG;
+	}
 
 	cur = idx;
 	for (i = 1; i < nsegs; i++) {
@@ -2156,6 +2165,9 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 	int i, mlen, rx = 0;
 	int cons, prod;
 	int maxpkt = 16; /* XXX TODO: make this a tunable */
+	bool check_hwcsum;
+
+	check_hwcsum = ((if_getcapenable(sc->sc_ifp) & IFCAP_RXCSUM) != 0);
 
 	RGE_ASSERT_LOCKED(sc);
 
@@ -2272,31 +2284,47 @@ rge_rxeof(struct rge_queues *q, struct mbufq *mq)
 		extsts = le32toh(cur_rx->hi_qword1.rx_qword4.rge_extsts);
 
 		/* Check IP header checksum. */
-		if ((if_getcapenable(sc->sc_ifp) & IFCAP_RXCSUM) != 0) {
+		if (check_hwcsum) {
 			/* Does it exist for IPv4? */
-			/* XXX counter */
-			if (extsts & RGE_RDEXTSTS_IPV4)
+			if (extsts & RGE_RDEXTSTS_IPV4) {
+				sc->sc_drv_stats.rx_offload_csum_ipv4_exists++;
 				m->m_pkthdr.csum_flags |=
 				    CSUM_IP_CHECKED;
-			/* XXX counter */
+			}
+			/* XXX IPv6 checksum check? */
+
 			if (((extsts & RGE_RDEXTSTS_IPCSUMERR) == 0)
-			    && ((extsts & RGE_RDEXTSTS_IPV4) != 0))
+			    && ((extsts & RGE_RDEXTSTS_IPV4) != 0)) {
+				sc->sc_drv_stats.rx_offload_csum_ipv4_valid++;
 				m->m_pkthdr.csum_flags |=
 				    CSUM_IP_VALID;
+			}
 
-			/* XXX TODO: this is still openbsd code */
 			/* Check TCP/UDP checksum. */
 			if ((extsts & (RGE_RDEXTSTS_IPV4 | RGE_RDEXTSTS_IPV6)) &&
-			    (((extsts & RGE_RDEXTSTS_TCPPKT) &&
-			    !(extsts & RGE_RDEXTSTS_TCPCSUMERR)) ||
-			    ((extsts & RGE_RDEXTSTS_UDPPKT) &&
-			    !(extsts & RGE_RDEXTSTS_UDPCSUMERR)))) {
-				/* XXX counter */
-				m->m_pkthdr.csum_flags |=
-				    CSUM_DATA_VALID|CSUM_PSEUDO_HDR;
-				m->m_pkthdr.csum_data = 0xffff;
+			    (extsts & RGE_RDEXTSTS_TCPPKT)) {
+				sc->sc_drv_stats.rx_offload_csum_tcp_exists++;
+				if ((extsts & RGE_RDEXTSTS_TCPCSUMERR) == 0) {
+					sc->sc_drv_stats.rx_offload_csum_tcp_valid++;
+					/* TCP checksum OK */
+					m->m_pkthdr.csum_flags |=
+					    CSUM_DATA_VALID|CSUM_PSEUDO_HDR;
+					m->m_pkthdr.csum_data = 0xffff;
+				}
 			}
-	}
+
+			if ((extsts & (RGE_RDEXTSTS_IPV4 | RGE_RDEXTSTS_IPV6)) &&
+			    (extsts & RGE_RDEXTSTS_UDPPKT)) {
+				sc->sc_drv_stats.rx_offload_csum_udp_exists++;
+				if ((extsts & RGE_RDEXTSTS_UDPCSUMERR) == 0) {
+					sc->sc_drv_stats.rx_offload_csum_udp_valid++;
+					/* UDP checksum OK */
+					m->m_pkthdr.csum_flags |=
+					    CSUM_DATA_VALID|CSUM_PSEUDO_HDR;
+					m->m_pkthdr.csum_data = 0xffff;
+				}
+			}
+		}
 
 		if (extsts & RGE_RDEXTSTS_VTAG) {
 			/* XXX counter */

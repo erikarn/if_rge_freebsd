@@ -117,6 +117,59 @@ rge_sysctl_drv_stats_attach(struct rge_softc *sc)
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_watchdog_timeout_cnt",
 	    CTLFLAG_RD, &sc->sc_drv_stats.tx_watchdog_timeout_cnt,
 	        "TX watchdog timeouts");
+
+	/* TX encap counters */
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_encap_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_encap_cnt, "calls to rge_encap()");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_encap_refrag_cnt",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_encap_cnt,
+	    "How often rge_encap() has re-linearised TX mbufs");
+
+	/* TX checksum counters */
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_encap_err_toofrag",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_encap_err_toofrag,
+	    "How often rge_encap() failed to defrag a TX mbuf");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_offload_ip_csum_set",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_offload_ip_csum_set,
+	    "Number of frames with TX'ed with IPv4 checksum offload set");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_offload_tcp_csum_set",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_offload_tcp_csum_set,
+	    "Number of frames TX'ed with TCP checksum offload set");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_offload_udp_csum_set",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_offload_udp_csum_set,
+	    "Number of frames TX'ed with UDP checksum offload set");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_offload_vlan_tag_set",
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_offload_vlan_tag_set,
+	    "Number of frames TX'ed with VLAN offload tag set");
+
+	/* RX checksum counters */
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_csum_ipv4_exists",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_csum_ipv4_exists,
+	    "Number of frames RX'ed with IPv4 checksum offload set");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_csum_ipv4_valid",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_csum_ipv4_valid,
+	    "Number of frames RX'ed with IPv4 checksum offload valid");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_csum_tcp_exists",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_csum_tcp_exists,
+	    "Number of frames RX'ed with TCP checksum offload set");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_csum_tcp_valid",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_csum_tcp_valid,
+	    "Number of frames RX'ed with TCP checksum offload valid");
+
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_csum_udp_exists",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_csum_udp_exists,
+	    "Number of frames RX'ed with UDP checksum offload set");
+	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "rx_offload_csum_udp_valid",
+	    CTLFLAG_RD, &sc->sc_drv_stats.rx_offload_csum_udp_valid,
+	    "Number of frames RX'ed with UDP checksum offload valid");
 }
 
 static void

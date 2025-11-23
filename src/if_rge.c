@@ -323,11 +323,13 @@ rge_attach(device_t dev)
 	}
 
 	/* Allocate top level bus DMA tag */
-	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1, 0,
-	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
-	    NULL,
+	error = bus_dma_tag_create(bus_get_dma_tag(dev),
+	    1, /* alignment */
+	    0, /* boundary */
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR,
+	    NULL, NULL, /* filter (unused) */
 	    BUS_SPACE_MAXADDR, /* maxsize */
-	    0, /* nsegments */
+	    BUS_SPACE_UNRESTRICTED, /* nsegments */
 	    BUS_SPACE_MAXADDR, /* maxsegsize */
 	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
@@ -342,8 +344,8 @@ rge_attach(device_t dev)
 	error = bus_dma_tag_create(sc->sc_dmat,
 	    RGE_ALIGN, /* alignment */
 	    0, /* boundary */
-	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
-	    NULL,
+	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR,
+	    NULL, NULL, /* filter (unused) */
 	    RGE_TX_LIST_SZ, /* maxsize */
 	    1, /* nsegments */
 	    RGE_TX_LIST_SZ, /* maxsegsize */
@@ -360,8 +362,8 @@ rge_attach(device_t dev)
 	error = bus_dma_tag_create(sc->sc_dmat,
 	    1, /* alignment */
 	    0, /* boundary */
-	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
-	    NULL,
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR,
+	    NULL, NULL, /* filter (unused) */
 	    RGE_JUMBO_FRAMELEN, /* maxsize */
 	    RGE_TX_NSEGS, /* nsegments */
 	    RGE_JUMBO_FRAMELEN, /* maxsegsize */
@@ -378,11 +380,11 @@ rge_attach(device_t dev)
 	error = bus_dma_tag_create(sc->sc_dmat,
 	    RGE_ALIGN, /* alignment */
 	    0, /* boundary */
-	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR, NULL,
-	    NULL,
-	    RGE_RX_LIST_SZ, /* XXX maxsize */
-	    1, /* XXX nsegments */
-	    RGE_RX_LIST_SZ, /* XXX maxsegsize */
+	    BUS_SPACE_MAXADDR_32BIT, BUS_SPACE_MAXADDR,
+	    NULL, NULL, /* filter (unused) */
+	    RGE_RX_LIST_SZ, /* maxsize */
+	    1, /* nsegments */
+	    RGE_RX_LIST_SZ, /* maxsegsize */
 	    0, /* flags */
 	    NULL, NULL, /* lockfunc, lockarg */
 	    &sc->sc_dmat_rx_desc);
@@ -396,8 +398,8 @@ rge_attach(device_t dev)
 	error = bus_dma_tag_create(sc->sc_dmat,
 	    1, /* alignment */
 	    0, /* boundary */
-	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
-	    NULL,
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR,
+	    NULL, NULL, /* filter (unused) */
 	    MCLBYTES, /* maxsize */
 	    1, /* nsegments */
 	    MCLBYTES, /* maxsegsize */
@@ -414,8 +416,8 @@ rge_attach(device_t dev)
 	error = bus_dma_tag_create(sc->sc_dmat,
 	    RGE_STATS_ALIGNMENT, /* alignment */
 	    0, /* boundary */
-	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL,
-	    NULL,
+	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR,
+	    NULL, NULL, /* filter (unused) */
 	    RGE_STATS_BUF_SIZE, /* maxsize */
 	    1, /* nsegments */
 	    RGE_STATS_BUF_SIZE, /* maxsegsize */

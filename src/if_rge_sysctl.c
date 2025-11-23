@@ -124,7 +124,7 @@ rge_sysctl_drv_stats_attach(struct rge_softc *sc)
 	    CTLFLAG_RD, &sc->sc_drv_stats.tx_encap_cnt, "calls to rge_encap()");
 
 	SYSCTL_ADD_QUAD(ctx, child, OID_AUTO, "tx_encap_refrag_cnt",
-	    CTLFLAG_RD, &sc->sc_drv_stats.tx_encap_cnt,
+	    CTLFLAG_RD, &sc->sc_drv_stats.tx_encap_refrag_cnt,
 	    "How often rge_encap() has re-linearised TX mbufs");
 
 	/* TX checksum counters */

@@ -320,6 +320,12 @@ rge_attach(device_t dev)
 		error = bus_setup_intr(dev, sc->sc_irq[i],
 		    INTR_TYPE_NET | INTR_MPSAFE, NULL, rge_intr_msi,
 		    sc, &sc->sc_ih[i]);
+		if (error != 0) {
+			RGE_PRINT_ERROR(sc,
+			    "%s: couldn't setup intr %d (error %d)", __func__,
+			    i, error);
+			goto fail;
+		}
 	}
 
 	/* Allocate top level bus DMA tag */

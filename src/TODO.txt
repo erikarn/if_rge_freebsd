@@ -1,8 +1,7 @@
 TODO list
 =========
 
-
- * I deleted the kstat code from the driver, but it turns out
+ * [done] I deleted the kstat code from the driver, but it turns out
    the way to get stats from the NIC is actually a stats counter
    page via DMA.
 
@@ -10,3 +9,13 @@ TODO list
    code that does the DMA transaction to fetch the stats page
    from the hardware, then .. populate a sysctl list for now?
 
+ * I've seen some cases where leaving the NIC unplugged for a while
+   and then plugging it in results in a watchdog timeout; need to see
+   if that's playing bad with dhclient (which backs off pretty quickly)
+   and figure out if the timeout is due to my code.
+
+ * Add TX/RX producer/consumer/ring space entries in sysctl so I can see
+   if the rings are getting stuck in obviously terrible ways.
+
+ * Make the number of packets serviced per txeof and rxeof a sysctl
+   tunable.

@@ -1441,14 +1441,14 @@ rge_ifmedia_upd(if_t ifp)
 	switch (sc->rge_type) {
 	case MAC_R27:
 		val &= ~RGE_ADV_10000TFDX;
-                /* fallthrough */
+		/* fallthrough */
 	case MAC_R26:
 		val &= ~RGE_ADV_5000TFDX;
-                /* fallthrough */
-        default:
-                val &= ~RGE_ADV_2500TFDX;
-                break;
-        }
+		/* fallthrough */
+	default:
+		val &= ~RGE_ADV_2500TFDX;
+		break;
+	}
 
 	anar = ANAR_TX_FD | ANAR_TX | ANAR_10_FD | ANAR_10;
 	gig = GTCR_ADV_1000TFDX | GTCR_ADV_1000THDX;
@@ -1551,32 +1551,21 @@ rge_ifmedia_sts(if_t ifp, struct ifmediareq *ifmr)
 static void
 rge_dma_load_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 {
-#if 0
-	int i;
-#endif
-
 	bus_addr_t *paddr = (bus_addr_t *) arg;
-
-#if 0
-	printf("%s: called; segs=%p, nsegs=%d, error=%d\n",
-	    __func__, segs, nsegs, error);
-#endif
 
 	*paddr = 0;
 
-	if (error)
-		return;
-
-	if (nsegs != 1) {
-		printf("%s: too many segs (got %d)\n", __func__, nsegs);
+	if (error) {
+		printf("%s: error! (%d)\n", __func__, error);
+		*paddr = 0;
 		return;
 	}
 
-#if 0
-	if (segs != 0)
-		for (i = 0; i < nsegs; i++)
-			printf("  segs[%d]=%p\n", i, segs);
-#endif
+	if (nsegs != 1) {
+		printf("%s: too many segs (got %d)\n", __func__, nsegs);
+		*paddr = 0;
+		return;
+	}
 
 	*paddr = segs[0].ds_addr;
 }

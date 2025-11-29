@@ -1841,7 +1841,7 @@ rx_ring_space(struct rge_queues *q)
 	uint32_t prod, cons;
 	uint32_t ret;
 
-	RGE_ASSERT_LOCKED(sc);
+	RGE_ASSERT_LOCKED(q->q_sc);
 
 	prod = q->q_rx.rge_rxq_prodidx;
 	cons = q->q_rx.rge_rxq_considx;
@@ -1879,7 +1879,7 @@ rge_newbuf(struct rge_queues *q)
 	int nsegs;
 	uint32_t idx;
 
-	RGE_ASSERT_LOCKED(sc);
+	RGE_ASSERT_LOCKED(q->q_sc);
 
 	/*
 	 * Verify we have enough space in the ring; error out
@@ -2014,7 +2014,7 @@ rge_rx_list_init(struct rge_queues *q)
 {
 	memset(q->q_rx.rge_rx_list, 0, RGE_RX_LIST_SZ);
 
-	RGE_ASSERT_LOCKED(sc);
+	RGE_ASSERT_LOCKED(q->q_sc);
 
 	q->q_rx.rge_rxq_prodidx = q->q_rx.rge_rxq_considx = 0;
 	q->q_rx.rge_head = NULL;
@@ -2043,7 +2043,7 @@ rge_fill_rx_ring(struct rge_queues *q)
 	struct rge_softc *sc = q->q_sc;
 	uint32_t count, i, prod, cons;
 
-	RGE_ASSERT_LOCKED(sc);
+	RGE_ASSERT_LOCKED(q->q_sc);
 
 	prod = q->q_rx.rge_rxq_prodidx;
 	cons = q->q_rx.rge_rxq_considx;
@@ -2070,7 +2070,7 @@ rge_tx_list_init(struct rge_queues *q)
 	struct rge_tx_desc *d;
 	int i;
 
-	RGE_ASSERT_LOCKED(sc);
+	RGE_ASSERT_LOCKED(q->q_sc);
 
 	memset(q->q_tx.rge_tx_list, 0, RGE_TX_LIST_SZ);
 

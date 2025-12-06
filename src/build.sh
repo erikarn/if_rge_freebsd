@@ -1,3 +1,3 @@
 #!/bin/sh
 
-env DEBUG=-g DEBUG_FLAGS=-g make ${*}
+env CFLAGS="-DINVARIANTS -DINVARIANT_SUPPORT" DEBUG=-g DEBUG_FLAGS=-g make ${*}

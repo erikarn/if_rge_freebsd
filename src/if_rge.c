@@ -1937,12 +1937,6 @@ rge_newbuf(struct rge_queues *q)
 	if (idx == RGE_RX_LIST_CNT - 1)
 		cmdsts |= RGE_RDCMDSTS_EOR;
 
-	/* Blank out the slot, ensure the hardware sees it */
-	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(0);
-	r->hi_qword1.rx_qword4.rge_extsts = htole32(0);
-	r->hi_qword0.rge_addr = htole64(0);
-	wmb();
-
 	/*
 	 * Configure the DMA pointer and config, but don't hand
 	 * it yet to the hardware.
@@ -1953,30 +1947,12 @@ rge_newbuf(struct rge_queues *q)
 	wmb();
 
 	/*
-	 * This says "Do sync required after update of host memory
-	 * by CPU, and prior to device access to host memory.
-	 * Thus, all of above descriptor writes are flushed, but not
-	 * the OWN flag.
-	 */
-	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
-	    BUS_DMASYNC_PREWRITE);
-	wmb();
-
-	/*
 	 * Mark the specific descriptor slot as "this descriptor is now
 	 * owned by the hardware", which when the hardware next sees
 	 * this, it'll continue RX DMA.
 	 */
 	cmdsts |= RGE_RDCMDSTS_OWN;
 	r->hi_qword1.rx_qword4.rge_cmdsts = htole32(cmdsts);
-
-	/*
-	 * This says "perform any sync required to an update of host
-	 * memory by the device" (PREREAD) and "perform any sync
-	 * required after device access to host memory" (PREWRITE).
-	 */
-	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
-	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 	wmb();
 
 	/*
@@ -2057,10 +2033,18 @@ rge_fill_rx_ring(struct rge_queues *q)
 	RGE_DPRINTF(sc, RGE_DEBUG_RECV_DESC, "%s: prod=%u, cons=%u, space=%u\n",
 	  __func__, prod, cons, count);
 
+	/* Make sure device->host changes are visible */
+	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
+	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
+
 	for (i = 0; i < count; i++) {
 		if (rge_newbuf(q))
 			break;
 	}
+
+	/* Make changes visible to the device */
+	bus_dmamap_sync(sc->sc_dmat_rx_desc, q->q_rx.rge_rx_list_map,
+	    BUS_DMASYNC_PREWRITE);
 }
 
 static void

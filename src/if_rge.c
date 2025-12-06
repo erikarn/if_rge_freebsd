@@ -1065,12 +1065,12 @@ rge_transmit_if(if_t ifp, struct mbuf *m)
 		RGE_UNLOCK(sc);
 		return (ret);
 	}
+	RGE_UNLOCK(sc);
 
 	/* mbuf is owned by the driver, schedule transmit */
 	taskqueue_enqueue(sc->sc_tq, &sc->sc_tx_task);
 	sc->sc_drv_stats.transmit_queued_cnt++;
 
-	RGE_UNLOCK(sc);
 	return (0);
 }
 

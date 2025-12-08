@@ -1587,8 +1587,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Allocate DMA'able memory for the TX ring. */
 	error = bus_dmamem_alloc(sc->sc_dmat_tx_desc,
 	    (void **) &q->q_tx.rge_tx_list,
-	        BUS_DMA_WAITOK | BUS_DMA_ZERO| BUS_DMA_COHERENT
-		| BUS_DMA_NOCACHE,
+	    BUS_DMA_WAITOK | BUS_DMA_ZERO | BUS_DMA_COHERENT,
 	    &q->q_tx.rge_tx_list_map);
 	if (error) {
 		RGE_PRINT_ERROR(sc, "%s: error (alloc tx_list.map) (%d)\n",
@@ -1630,8 +1629,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Allocate DMA'able memory for the RX ring. */
 	error = bus_dmamem_alloc(sc->sc_dmat_rx_desc,
 	    (void **) &q->q_rx.rge_rx_list,
-	    BUS_DMA_WAITOK | BUS_DMA_ZERO | BUS_DMA_COHERENT
-	    |  BUS_DMA_NOCACHE,
+	    BUS_DMA_WAITOK | BUS_DMA_ZERO | BUS_DMA_COHERENT,
 	    &q->q_rx.rge_rx_list_map);
 	if (error) {
 		RGE_PRINT_ERROR(sc, "%s: error (alloc rx_list.map) (%d)\n",
@@ -1691,11 +1689,9 @@ rge_alloc_stats_mem(struct rge_softc *sc)
 
 	RGE_ASSERT_UNLOCKED(sc);
 
-	/* Allocate DMA'able memory for the TX ring. */
+	/* Allocate DMA'able memory for the stats buffer. */
 	error = bus_dmamem_alloc(sc->sc_dmat_stats_buf,
-	    (void **) &ss->stats,
-	        BUS_DMA_WAITOK | BUS_DMA_ZERO| BUS_DMA_COHERENT
-		| BUS_DMA_NOCACHE,
+	    (void **) &ss->stats, BUS_DMA_WAITOK | BUS_DMA_ZERO,
 	    &ss->map);
 	if (error) {
 		RGE_PRINT_ERROR(sc, "%s: error (alloc stats) (%d)\n",
